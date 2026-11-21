@@ -35,4 +35,11 @@ bool write_summary_json(const std::string& path, const Config& cfg,
                         const ParallelInfo& parallel, const FinalStats& final_stats,
                         const RiskStats& risk, const Accumulator& acc, const Timing& timing);
 
+// Shared last step of mc_serial and mc_hybrid: computes the analytics from acc,
+// writes fan_chart.csv and summary.json into cfg.out and prints a short report.
+// Returns false + message on failure.
+bool finish_run(const std::string& program, const Config& cfg, const BinLayout& layout,
+                const Accumulator& acc, const ParallelInfo& parallel, const Timing& timing,
+                std::string& error);
+
 }  // namespace mc

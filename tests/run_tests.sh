@@ -44,7 +44,13 @@ for bad in "--trials 0" "--sigma -0.1" "--confidence 1.5" "--months abc" "--unkn
 done
 [ $failed -eq 0 ] && echo "[e2e] invalid inputs are rejected -> PASS"
 
-# Later phases add: tests/consistency_test.sh (Phase 2) and pytest (Phase 4).
+echo
+echo "== Consistency: serial == hybrid =="
+if ! bash tests/consistency_test.sh; then
+    failed=1
+fi
+
+# Phase 4 adds: pytest tests/python (C++ vs independent NumPy reference).
 
 echo
 if [ $failed -eq 0 ]; then

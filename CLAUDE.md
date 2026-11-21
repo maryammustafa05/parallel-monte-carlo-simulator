@@ -265,10 +265,12 @@ month,p05,p25,median,p75,p95,mean
   "parallel": {"mpi_processes":4,"omp_threads":2},
   "final_value": {"mean":0,"std":0,"min":0,"max":0,"median":0,"p05":0,"p95":0},
   "risk": {"var":0,"prob_loss":0,"confidence":0.95},
-  "histogram": {"bins":2048,"overflow_low":0,"overflow_high":0},
+  "histogram": {"bins":2048,"overflow_low":0,"overflow_high":0,"checksum":"0123456789abcdef"},
   "timing": {"total_s":0,"compute_s":0,"reduce_s":0}
 }
 ```
+
+`checksum` (added in Phase 2) is a 16-hex-digit FNV-1a hash of all integer histogram counts; equal checksums prove serial == parallel.
 
 `results/final_hist.csv` (for the distribution plot): `bin_lower,bin_upper,count` for month T.
 

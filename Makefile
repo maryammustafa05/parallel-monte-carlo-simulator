@@ -5,8 +5,8 @@
 #   MPICXX = mpicxx        → used for mc_hybrid (g++ plus the MPI include/lib paths)
 #
 # src/core is compiled ONCE into build/core/*.o and those same object files are
-# linked into every program. So mc_serial, the tests and (from Phase 2) mc_hybrid
-# all run byte-for-byte the same simulation code — important for design decision D2.
+# linked into every program. So mc_serial, the tests and mc_hybrid all run
+# byte-for-byte the same simulation code — important for design decision D2.
 
 CXX      ?= g++
 MPICXX   ?= mpicxx
@@ -49,6 +49,19 @@ $(BUILD)/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
+# --- Phases 2-3: parallel driver ---------------------------------------------
+# Only main_hybrid.cpp is compiled with mpicxx + OpenMP. It links the SAME core
+# objects as mc_serial, so parallelism lives only in src/hybrid (CLAUDE.md §6).
+hybrid: $(BUILD)/mc_hybrid
+
+$(BUILD)/mc_hybrid: $(BUILD)/hybrid/main_hybrid.o $(CORE_OBJS)
+	$(MPICXX) $(CXXFLAGS) $(OMPFLAGS) $^ -o $@
+
+# More specific than the general rule above, so make picks this one for src/hybrid.
+$(BUILD)/hybrid/%.o: src/hybrid/%.cpp
+	@mkdir -p $(dir $@)
+	$(MPICXX) $(CXXFLAGS) $(OMPFLAGS) $(MPIFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
+
 # --- Tests -------------------------------------------------------------------
 tests: $(TEST_BINS)
 
@@ -56,13 +69,10 @@ $(BUILD)/tests/%: tests/cpp/%.cpp $(CORE_OBJS)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEPFLAGS) $< $(CORE_OBJS) -o $@
 
-test: tests serial
+test: tests serial hybrid
 	@bash tests/run_tests.sh
 
 # --- Placeholders (filled in later phases) --------------------------------
-hybrid:
-	@echo "[make] hybrid: not implemented yet (Phases 2-3)"
-
 bench:
 	@echo "[make] bench: not implemented yet (Phase 6)"
 
@@ -70,4 +80,5 @@ bench:
 clean:
 	rm -rf $(BUILD)
 
--include $(CORE_OBJS:.o=.d) $(BUILD)/serial/main_serial.d $(TEST_BINS:=.d)
+-include $(CORE_OBJS:.o=.d) $(BUILD)/serial/main_serial.d $(BUILD)/hybrid/main_hybrid.d \
+         $(TEST_BINS:=.d)

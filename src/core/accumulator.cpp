@@ -50,4 +50,21 @@ void Accumulator::merge(const Accumulator& other) {
     overflow_high += other.overflow_high;
 }
 
+uint64_t Accumulator::checksum() const {
+    // FNV-1a: for each byte, XOR it into the hash and multiply by a fixed prime.
+    uint64_t hash = 0xCBF29CE484222325ULL;
+    auto mix = [&hash](uint64_t value) {
+        for (int byte = 0; byte < 8; ++byte) {
+            hash ^= (value >> (8 * byte)) & 0xFFULL;
+            hash *= 0x100000001B3ULL;
+        }
+    };
+    for (uint64_t count : hist) mix(count);
+    mix(trials);
+    mix(loss_count);
+    mix(overflow_low);
+    mix(overflow_high);
+    return hash;
+}
+
 }  // namespace mc

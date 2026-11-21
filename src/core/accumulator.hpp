@@ -46,6 +46,11 @@ struct Accumulator {
     // Adds all counts and sums of `other` into this accumulator.
     // Both must have the same months and bins.
     void merge(const Accumulator& other);
+
+    // A 64-bit fingerprint (FNV-1a hash) of all integer counts: histograms, trials,
+    // loss_count and overflow counters. Two runs have the same checksum only if all
+    // those counts are identical, so it proves serial == parallel in one number.
+    uint64_t checksum() const;
 };
 
 }  // namespace mc
