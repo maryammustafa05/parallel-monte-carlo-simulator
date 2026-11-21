@@ -202,7 +202,7 @@ Or draw the charts for any run folder yourself:
 | Chart | What it shows |
 |---|---|
 | [Fan chart](docs/images/fan_chart.png) (top of this page) | For every month: the middle 50 % and 90 % of futures as shaded bands, the median (typical) and mean (average) path, and the starting amount |
-| [Distribution](docs/images/distribution.png) (below) | Where the portfolio ends after the horizon. The worst 5 % of futures are shaded orange; the orange line is the 5th percentile, and the gap from it to the starting amount is the 95 % VaR |
+| [Distribution](docs/images/distribution.png) (below) | Where the portfolio ends after the horizon. The worst 5 % of futures are shaded orange; the orange line is the 5th percentile, and the gap from it to the starting amount is the 95 % VaR (labels follow `--confidence`, e.g. worst 1 % at 99 %) |
 
 ![Distribution of final values with VaR](docs/images/distribution.png)
 
@@ -223,6 +223,8 @@ MPI processes and OpenMP threads, then press **Run simulation**. The dashboard r
 `mpirun ... build/mc_hybrid` and shows the median, VaR, chance of loss and compute time,
 the two charts, a table of the fan chart, and the exact command and output. Each run is
 saved under `results/dashboard/<date-time>/`.
+If your browser or Streamlit is in dark mode, the charts are drawn in matching dark
+colours. The plot scripts can do the same with `--theme dark` (default `light`).
 
 `make test` also checks the dashboard: [tests/python/test_dashboard.py](tests/python/test_dashboard.py)
 loads the real app with Streamlit's `AppTest`, presses **Run simulation** for a

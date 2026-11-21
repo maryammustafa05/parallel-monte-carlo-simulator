@@ -23,6 +23,7 @@ import streamlit as st
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
+import chart_style as cs  # noqa: E402
 from plot_distribution import make_distribution_chart  # noqa: E402
 from plot_fan_chart import make_fan_chart  # noqa: E402
 
@@ -100,6 +101,14 @@ def sidebar() -> tuple[dict, bool]:
     return settings, run
 
 
+def chart_theme() -> cs.Theme:
+    """Dark chart colours when Streamlit shows its dark theme, light otherwise."""
+    try:
+        return cs.DARK if st.context.theme.type == "dark" else cs.LIGHT
+    except AttributeError:  # older Streamlit without st.context.theme
+        return cs.LIGHT
+
+
 def show_results(result: dict) -> None:
     """Headline numbers, both charts, a table view and the timing breakdown."""
     s = result["summary"]
@@ -116,15 +125,17 @@ def show_results(result: dict) -> None:
     c3.metric("Chance of a loss", f"{risk['prob_loss']:.1%}",
               help="Share of simulated futures that end below the initial investment.")
     c4.metric("Compute time", f"{timing['total_s']:.2f} s",
-              f"{s['parallel']['mpi_processes']} proc × {s['parallel']['omp_threads']} thr",
-              delta_color="off")
+              f"{s['parallel']['mpi_processes']} process(es) × "
+              f"{s['parallel']['omp_threads']} thread(s)",
+              delta_color="off", delta_arrow="off")  # a label, not a change: no arrow
 
     tab_fan, tab_dist, tab_table, tab_run = st.tabs(
         ["Fan chart", "Final-value distribution", "Table", "Run details"])
+    theme = chart_theme()
     with tab_fan:
-        st.pyplot(make_fan_chart(result["fan"], s))
+        st.pyplot(make_fan_chart(result["fan"], s, theme))
     with tab_dist:
-        st.pyplot(make_distribution_chart(result["hist"], s))
+        st.pyplot(make_distribution_chart(result["hist"], s, theme))
     with tab_table:
         table = result["fan"].copy()
         table.insert(1, "year", table["month"] / 12)

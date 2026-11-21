@@ -34,12 +34,29 @@ def coarsen(hist: pd.DataFrame, group: int) -> pd.DataFrame:
                                   count=("count", "sum")).reset_index(drop=True)
 
 
-def make_distribution_chart(hist: pd.DataFrame, summary: dict) -> Figure:
-    """Builds the distribution figure: probability density, worst-5 % tail, V0 and VaR lines."""
+def histogram_quantile(hist: pd.DataFrame, q: float) -> float:
+    """Value below which a fraction q of the futures end, read from the histogram
+    (interpolating inside the bin in log space, like the C++ engine does)."""
+    counts = hist["count"].to_numpy(dtype=float)
+    cumulative = np.cumsum(counts)
+    target = q * cumulative[-1]
+    b = int(np.searchsorted(cumulative, target))
+    before = cumulative[b - 1] if b > 0 else 0.0
+    fraction = (target - before) / counts[b] if counts[b] > 0 else 0.0
+    lo, hi = np.log(hist["bin_lower"].iloc[b]), np.log(hist["bin_upper"].iloc[b])
+    return float(np.exp(lo + fraction * (hi - lo)))
+
+
+def make_distribution_chart(hist: pd.DataFrame, summary: dict,
+                            theme: cs.Theme = cs.LIGHT) -> Figure:
+    """Builds the distribution figure: probability density, worst tail, V0 and VaR lines."""
     params = summary["params"]
     risk = summary["risk"]
     initial = params["initial"]
-    threshold = initial - risk["var"] if risk["var"] > 0 else summary["final_value"]["p05"]
+    confidence = risk["confidence"]
+    tail_share = cs.percent(1 - confidence)        # e.g. "5 %" at 95 % confidence
+    # The VaR threshold is the (1 - confidence) quantile of the final value.
+    threshold = histogram_quantile(hist, 1 - confidence)
 
     bins = coarsen(hist, MERGE_BINS)
     total = bins["count"].sum()
@@ -56,31 +73,32 @@ def make_distribution_chart(hist: pd.DataFrame, summary: dict) -> Figure:
 
     fig = Figure(figsize=cs.FIGSIZE, dpi=cs.DPI)
     ax = fig.add_subplot()
-    cs.style_axes(ax)
+    cs.style_axes(ax, theme)
     ax.yaxis.set_major_formatter(lambda v, _pos: f"{v:g} %")
 
     # Whole distribution as a soft area with a 2px outline.
-    ax.fill_between(edges, heights * 100, step="post", color=cs.BLUE, alpha=0.12, linewidth=0)
-    ax.step(edges, heights * 100, where="post", color=cs.BLUE, linewidth=2,
+    ax.fill_between(edges, heights * 100, step="post", color=theme.blue, alpha=0.12, linewidth=0)
+    ax.step(edges, heights * 100, where="post", color=theme.blue, linewidth=2,
             label="Share of futures ending at this value")
     # Worst 5 % of futures, below the VaR threshold, highlighted in orange.
     tail = edges <= threshold
-    ax.fill_between(edges, heights * 100, where=tail, step="post", color=cs.ORANGE,
-                    alpha=0.35, linewidth=0, label="Worst 5 % of futures")
+    ax.fill_between(edges, heights * 100, where=tail, step="post", color=theme.orange,
+                    alpha=0.35, linewidth=0, label=f"Worst {tail_share} of futures")
 
     top = (heights * 100).max()
-    ax.axvline(initial, color=cs.TEXT_PRIMARY, linewidth=1)
-    ax.text(initial, top * 1.04, f" Initial {initial:,.0f}", color=cs.TEXT_PRIMARY,
+    ax.axvline(initial, color=theme.text_primary, linewidth=1)
+    ax.text(initial, top * 1.04, f" Initial {initial:,.0f}", color=theme.text_primary,
             fontsize=9, ha="left", va="bottom")
-    ax.axvline(threshold, color=cs.ORANGE, linewidth=2)
-    ax.text(threshold, top * 0.92,
-            f"5th percentile {cs.money(threshold)} \nVaR (95 %) = {cs.money(risk['var'])} ",
-            color=cs.TEXT_PRIMARY, fontsize=9, ha="right", va="top")
+    # The threshold line is named in the legend (not next to the line), so its label
+    # can never collide with the axis, whatever the confidence level.
+    ax.axvline(threshold, color=theme.orange, linewidth=2,
+               label=f"Worst-{tail_share} threshold: {threshold:,.0f}")
 
-    ax.text(0.99, 0.80,
+    ax.text(0.99, 0.74,
+            f"Value at Risk ({cs.percent(confidence)}): {risk['var']:,.0f}\n"
             f"Chance of ending below the start: {risk['prob_loss']:.1%}\n"
             f"Median final value: {summary['final_value']['median']:,.0f}",
-            transform=ax.transAxes, ha="right", va="top", fontsize=10, color=cs.TEXT_PRIMARY)
+            transform=ax.transAxes, ha="right", va="top", fontsize=10, color=theme.text_primary)
 
     ax.set_xlim(edges[0], edges[-1])
     ax.set_ylim(0, top * 1.15)
@@ -89,10 +107,8 @@ def make_distribution_chart(hist: pd.DataFrame, summary: dict) -> Figure:
                   if params["months"] % 12 == 0 else
                   f"Portfolio value after {params['months']} months")
     ax.set_ylabel("Share of futures per 1,000 of value")
-    cs.add_titles(ax, "Where the portfolio could end up", cs.describe_params(params))
-    legend = ax.legend(loc="upper right", frameon=False, fontsize=9)
-    for text in legend.get_texts():
-        text.set_color(cs.TEXT_PRIMARY)
+    cs.add_titles(ax, "Where the portfolio could end up", cs.describe_params(params), theme)
+    cs.add_legend(ax, "upper right", theme)
     fig.tight_layout()
     return fig
 
@@ -102,12 +118,15 @@ def main() -> None:
     parser.add_argument("--input", type=Path, default=Path("results/run"),
                         help="run directory containing final_hist.csv and summary.json")
     parser.add_argument("--output", type=Path, default=Path("docs/images/distribution.png"))
+    parser.add_argument("--theme", choices=("light", "dark"), default="light",
+                        help="colour theme (light for documents)")
     args = parser.parse_args()
 
     hist = pd.read_csv(args.input / "final_hist.csv")
     summary = json.loads((args.input / "summary.json").read_text())
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    make_distribution_chart(hist, summary).savefig(args.output)
+    theme = cs.DARK if args.theme == "dark" else cs.LIGHT
+    make_distribution_chart(hist, summary, theme).savefig(args.output)
     print(f"wrote {args.output}")
 
 
