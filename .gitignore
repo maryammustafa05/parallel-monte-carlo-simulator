@@ -1,0 +1,17 @@
+# Build output
+build/
+
+# Run outputs (keep only the small committed sample run)
+results/*
+!results/sample/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Editors / OS
+.vscode/
+*.swp
+.DS_Store
