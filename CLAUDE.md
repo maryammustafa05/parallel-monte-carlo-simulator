@@ -272,7 +272,9 @@ month,p05,p25,median,p75,p95,mean
 
 `checksum` (added in Phase 2) is a 16-hex-digit FNV-1a hash of all integer histogram counts; equal checksums prove serial == parallel.
 
-`results/final_hist.csv` (for the distribution plot): `bin_lower,bin_upper,count` for month T.
+`results/<run>/final_hist.csv` (for the distribution plot): `bin_lower,bin_upper,count` for month T.
+
+With `--exact` (≤ 10⁷ trials), `summary.json` also gets `"exact": {"median","p05","p95","var","rel_diff_median","rel_diff_p05","rel_diff_p95","rel_diff_var"}` (exact values from all final values, and the histogram's relative difference from them).
 
 `results/benchmark.csv`
 ```

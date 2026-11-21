@@ -79,10 +79,28 @@ static void test_stats_from_accumulator() {
           fan[1].median <= fan[1].p75 && fan[1].p75 <= fan[1].p95);
 }
 
+static void test_exact_percentiles() {
+    // Sorted 0, 10, 20, 30, 40: position q*(n-1) = q*4.
+    const std::vector<double> v = {0, 10, 20, 30, 40};
+    CHECK_NEAR(mc::sorted_percentile(v, 0.0), 0.0, 1e-12);
+    CHECK_NEAR(mc::sorted_percentile(v, 0.5), 20.0, 1e-12);
+    CHECK_NEAR(mc::sorted_percentile(v, 0.05), 2.0, 1e-12);   // position 0.2 -> 0 + 0.2*10
+    CHECK_NEAR(mc::sorted_percentile(v, 1.0), 40.0, 1e-12);
+    CHECK(std::isnan(mc::sorted_percentile(std::vector<double>{}, 0.5)));
+
+    // compute_exact_stats sorts for us: unsorted input, V0 = 25, 95 % confidence.
+    const mc::ExactStats e = mc::compute_exact_stats({40, 0, 30, 10, 20}, 25.0, 0.95);
+    CHECK_NEAR(e.median, 20.0, 1e-12);
+    CHECK_NEAR(e.p05, 2.0, 1e-12);
+    CHECK_NEAR(e.p95, 38.0, 1e-12);       // position 3.8 -> 30 + 0.8*10
+    CHECK_NEAR(e.var, 25.0 - 2.0, 1e-12);  // VaR = V0 - P5
+}
+
 int main() {
     test_uniform_histogram();
     test_single_bin_and_edges();
     test_var();
     test_stats_from_accumulator();
+    test_exact_percentiles();
     return test::summary("test_analytics");
 }

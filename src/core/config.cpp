@@ -128,6 +128,9 @@ bool validate(const Config& cfg, std::string& error) {
         error = "--threads must be >= 1";
     } else if (cfg.bins < 2) {
         error = "--bins must be >= 2";
+    } else if (cfg.exact && cfg.trials > MAX_EXACT_TRIALS) {
+        error = "--exact keeps every final value in memory; use --trials <= " +
+                std::to_string(MAX_EXACT_TRIALS);
     } else {
         return true;
     }
@@ -147,7 +150,8 @@ std::string usage(const std::string& program_name) {
            "  --threads N      OpenMP threads per process       (default 1, hybrid only)\n"
            "  --bins N         histogram bins per month         (default 2048)\n"
            "  --out DIR        output directory                 (default results/run)\n"
-           "  --exact          keep all final values for validation (Phase 4)\n"
+           "  --exact          also compute exact percentiles from all final values\n"
+           "                   (validation only, needs --trials <= 10000000)\n"
            "  --help           show this text\n";
 }
 

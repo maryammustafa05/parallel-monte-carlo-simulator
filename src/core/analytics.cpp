@@ -91,4 +91,23 @@ RiskStats compute_risk(const Accumulator& acc, const BinLayout& layout, double i
     return r;
 }
 
+double sorted_percentile(const std::vector<double>& sorted, double q) {
+    if (sorted.empty()) return std::numeric_limits<double>::quiet_NaN();
+    const double position = q * static_cast<double>(sorted.size() - 1);
+    const size_t below = static_cast<size_t>(std::floor(position));
+    const size_t above = std::min(below + 1, sorted.size() - 1);
+    const double fraction = position - static_cast<double>(below);
+    return sorted[below] + fraction * (sorted[above] - sorted[below]);
+}
+
+ExactStats compute_exact_stats(std::vector<double> values, double initial, double confidence) {
+    std::sort(values.begin(), values.end());
+    ExactStats e;
+    e.median = sorted_percentile(values, 0.50);
+    e.p05 = sorted_percentile(values, 0.05);
+    e.p95 = sorted_percentile(values, 0.95);
+    e.var = value_at_risk(initial, sorted_percentile(values, 1.0 - confidence));
+    return e;
+}
+
 }  // namespace mc

@@ -28,15 +28,13 @@ int main(int argc, char** argv) {
     if (cfg.threads != 1) {
         std::cerr << "note: mc_serial always uses 1 thread; --threads is ignored\n";
     }
-    if (cfg.exact) {
-        std::cerr << "note: --exact is not implemented yet (Phase 4); ignored\n";
-    }
 
     const auto start = clock::now();
 
     // Every chunk, one after another, into one accumulator.
     const mc::BinLayout layout = mc::make_bin_layout(cfg);
     mc::Accumulator acc(cfg.months, cfg.bins);
+    acc.keep_final_values = cfg.exact;
     const uint64_t chunks = mc::num_chunks(cfg.trials);
     for (uint64_t c = 0; c < chunks; ++c) {
         mc::simulate_chunk(cfg, layout, c, acc);

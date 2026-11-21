@@ -21,6 +21,9 @@ struct Config {
     bool exact = false;             // also keep all final values (Phase 4)
 };
 
+// Largest --trials allowed with --exact (10 million doubles = 80 MB of memory).
+constexpr uint64_t MAX_EXACT_TRIALS = 10000000;
+
 // Outcome of parsing the command line.
 enum class ParseResult { Ok, Help, Error };
 

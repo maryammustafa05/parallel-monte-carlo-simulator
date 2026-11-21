@@ -24,6 +24,7 @@ void Accumulator::add_final(double value, double initial) {
     final_sum += value;
     final_sum_sq += value * value;
     if (value < initial) ++loss_count;
+    if (keep_final_values) final_values.push_back(value);
 }
 
 void Accumulator::merge(const Accumulator& other) {
@@ -48,6 +49,8 @@ void Accumulator::merge(const Accumulator& other) {
     loss_count += other.loss_count;
     overflow_low += other.overflow_low;
     overflow_high += other.overflow_high;
+    final_values.insert(final_values.end(), other.final_values.begin(),
+                        other.final_values.end());
 }
 
 uint64_t Accumulator::checksum() const {

@@ -31,6 +31,11 @@ struct Accumulator {
     uint64_t overflow_low = 0;    // values below a month's histogram range (all months)
     uint64_t overflow_high = 0;   // values above a month's histogram range (all months)
 
+    // --exact mode only (validation, small N): also keep every final value V_T,
+    // so exact percentiles can be compared with the histogram ones.
+    bool keep_final_values = false;
+    std::vector<double> final_values;  // in no particular order
+
     // Creates an empty accumulator for `months` months and `bins` bins per month.
     Accumulator(int months, int bins);
 

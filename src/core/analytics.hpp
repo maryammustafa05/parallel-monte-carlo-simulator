@@ -28,6 +28,12 @@ struct RiskStats {
     double confidence = 0;
 };
 
+// --exact mode: the same numbers computed from every final value (no histogram).
+struct ExactStats {
+    double median = 0, p05 = 0, p95 = 0;
+    double var = 0;         // VaR at the run's confidence level
+};
+
 // Value at quantile q (0..1) of a log-spaced histogram.
 // Interpolates linearly inside the bin (in log space). Returns NaN if empty.
 double histogram_percentile(const uint64_t* counts, int bins, double log_lo,
@@ -46,5 +52,12 @@ FinalStats compute_final_stats(const Accumulator& acc, const BinLayout& layout);
 // VaR at `confidence` and probability of ending below V0.
 RiskStats compute_risk(const Accumulator& acc, const BinLayout& layout, double initial,
                        double confidence);
+
+// Quantile q of already SORTED values, interpolating linearly between the two
+// nearest values at position q*(n-1) (the same rule as NumPy's default).
+double sorted_percentile(const std::vector<double>& sorted, double q);
+
+// Exact median, P5, P95 and VaR from all final values (takes a copy and sorts it).
+ExactStats compute_exact_stats(std::vector<double> values, double initial, double confidence);
 
 }  // namespace mc

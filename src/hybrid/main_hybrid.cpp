@@ -22,6 +22,8 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "core/accumulator.hpp"
 #include "core/config.hpp"
@@ -40,6 +42,7 @@ int simulate_block(const mc::Config& cfg, const mc::BinLayout& layout, uint64_t 
         // Private to this thread. Created inside the parallel region so its
         // memory is allocated (and first touched) by the thread that uses it.
         mc::Accumulator local(cfg.months, cfg.bins);
+        local.keep_final_values = cfg.exact;
 
         #pragma omp for schedule(static)
         for (uint64_t c = first; c < first + count; ++c) {
@@ -96,6 +99,24 @@ void reduce_to_root(mc::Accumulator& acc, int rank) {
     }
 }
 
+// --exact mode: collects every rank's final values on rank 0 (MPI_Gatherv,
+// because ranks may hold different numbers of values). Validation only:
+// at most MAX_EXACT_TRIALS values, so the counts fit in an int.
+void gather_final_values(mc::Accumulator& acc, int rank, int ranks) {
+    const int local_count = static_cast<int>(acc.final_values.size());
+    std::vector<int> counts(ranks, 0), offsets(ranks, 0);
+    MPI_Gather(&local_count, 1, MPI_INT, counts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    std::vector<double> all;
+    if (rank == 0) {
+        for (int r = 1; r < ranks; ++r) offsets[r] = offsets[r - 1] + counts[r - 1];
+        all.resize(static_cast<size_t>(offsets[ranks - 1]) + counts[ranks - 1]);
+    }
+    MPI_Gatherv(acc.final_values.data(), local_count, MPI_DOUBLE, all.data(), counts.data(),
+                offsets.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    if (rank == 0) acc.final_values = std::move(all);
+}
+
 // Largest value of x over all ranks (result on rank 0). Used for timing:
 // a parallel run is only as fast as its slowest process.
 double max_over_ranks(double x) {
@@ -146,9 +167,6 @@ int main(int argc, char** argv) {
         if (root) std::cerr << "error: --months x --bins is too large for one MPI message\n";
         return finish(1);
     }
-    if (cfg.exact && root) {
-        std::cerr << "note: --exact is not implemented yet (Phase 4); ignored\n";
-    }
 
     // Start the clock together on all ranks (design decision D5).
     MPI_Barrier(MPI_COMM_WORLD);
@@ -157,6 +175,7 @@ int main(int argc, char** argv) {
     // --- Compute: this rank's block of chunks, on OpenMP threads ---
     const mc::BinLayout layout = mc::make_bin_layout(cfg);
     mc::Accumulator acc(cfg.months, cfg.bins);
+    acc.keep_final_values = cfg.exact;
     uint64_t first = 0, count = 0;
     mc::chunk_block(mc::num_chunks(cfg.trials), ranks, rank, first, count);
     const int threads_used = simulate_block(cfg, layout, first, count, acc);
@@ -176,6 +195,10 @@ int main(int argc, char** argv) {
     timing.compute_s = max_over_ranks(compute_s);
     timing.reduce_s = max_over_ranks(reduce_s);
     timing.total_s = max_over_ranks(total_s);
+
+    // Validation data is gathered AFTER the clock stopped, so --exact never
+    // distorts timing measurements.
+    if (cfg.exact) gather_final_values(acc, rank, ranks);
 
     // --- Output: rank 0 only ---
     int exit_code = 0;

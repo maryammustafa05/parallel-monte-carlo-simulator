@@ -35,7 +35,8 @@ else
 fi
 
 # Bad input must be rejected with a non-zero exit code.
-for bad in "--trials 0" "--sigma -0.1" "--confidence 1.5" "--months abc" "--unknown 1"; do
+for bad in "--trials 0" "--sigma -0.1" "--confidence 1.5" "--months abc" "--unknown 1" \
+           "--exact --trials 20000000"; do
     # shellcheck disable=SC2086  # we want word splitting of $bad
     if ./build/mc_serial $bad --out "$out_dir" > /dev/null 2>&1; then
         echo "[e2e] '$bad' was accepted but should be rejected -> FAIL"
@@ -50,7 +51,20 @@ if ! bash tests/consistency_test.sh; then
     failed=1
 fi
 
-# Phase 4 adds: pytest tests/python (C++ vs independent NumPy reference).
+echo
+echo "== Python: C++ vs independent NumPy reference =="
+# Prefer the project's virtual environment; fall back to the system python3.
+PYTHON=.venv/bin/python
+[ -x "$PYTHON" ] || PYTHON=python3
+if "$PYTHON" -c "import numpy, pytest" 2> /dev/null; then
+    if ! "$PYTHON" -m pytest -q -s -p no:cacheprovider tests/python; then
+        failed=1
+    fi
+else
+    echo "[python] numpy/pytest not found. Install them with:"
+    echo "         python3 -m venv .venv && .venv/bin/pip install -r requirements.txt  -> FAIL"
+    failed=1
+fi
 
 echo
 if [ $failed -eq 0 ]; then

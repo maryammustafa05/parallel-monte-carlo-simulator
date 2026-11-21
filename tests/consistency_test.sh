@@ -47,6 +47,10 @@ for key in ("mean", "std"):
         problems.append(f"final_value.{key}: {s['final_value'][key]} vs {p['final_value'][key]}")
 if s["risk"] != p["risk"]:
     problems.append(f"risk differs: {s['risk']} vs {p['risk']}")
+# --exact runs: sorting removes any dependence on the order values arrived in,
+# so the exact percentiles must be identical too.
+if s.get("exact") != p.get("exact"):
+    problems.append(f"exact differs: {s.get('exact')} vs {p.get('exact')}")
 
 s_rows = list(csv.DictReader(open(f"{serial_dir}/fan_chart.csv")))
 p_rows = list(csv.DictReader(open(f"{parallel_dir}/fan_chart.csv")))
@@ -103,5 +107,8 @@ check_case "main" "--trials 50000 --months 60 --seed 2026" "1 2 3 4" "1 2 4"
 # Tiny case: 5 000 trials = only 2 chunks, so with 3 or 4 processes some
 # processes get no work at all. They must not spoil min/max or the sums.
 check_case "tiny" "--trials 5000 --months 12 --seed 7" "3 4" "2"
+
+# Exact mode: every process's final values are gathered on process 0.
+check_case "exact" "--trials 30000 --months 24 --seed 11 --exact" "1 3" "2"
 
 exit $failed
