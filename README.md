@@ -1,317 +1,196 @@
 # Parallel Monte Carlo Investment & Risk Simulator (MPI + OpenMP)
 
-A hybrid-parallel C++ engine that simulates millions of possible futures of an
-investment and reports the median path, the 5th–95th percentile "fan", and the
-95 % Value at Risk (VaR). **MPI** splits the trials across processes, and
-**OpenMP** splits each process's share across threads.
+A hybrid-parallel C++ engine that simulates millions of possible futures of an investment,
+month by month, and reports the typical outcome, the spread of good and bad outcomes (a
+"fan chart"), and the **Value at Risk (VaR)**. **MPI** splits the work across processes and
+**OpenMP** splits each process's share across threads. The results are identical whatever
+the number of processes and threads.
 
 Course project for Parallel & Distributed Computing (PDC), BS Software Engineering,
 FAST NUCES Karachi, Fall 2026.
 Team: Maryam Mustafa (23k-2046), Umaima Fatima (23k-3043).
 
-> **Status:** Phase 7 done: the engine runs on MPI processes × OpenMP threads with results
-> identical to the serial run, is validated against exact values and an independent NumPy
-> implementation, has charts plus a Streamlit dashboard, has been benchmarked
-> (best: **2.56× on 5 cores**, see [benchmark report](docs/benchmark-report.md)), and is
-> hardened against extreme inputs. Next: Phase 8 (final documentation and demo).
-
 ![Fan chart of 1,000,000 simulated futures](docs/images/fan_chart.png)
 
----
+## Results at a glance
 
-## Requirements
+10,000 invested for 10 years at 7 % expected return and 15 % volatility per year,
+1,000,000 simulated futures:
 
-Ubuntu 24.04 (native, VM or WSL2) with:
+| | Result |
+|---|---|
+| Typical outcome (median) | **17,983** (average 20,094, pulled up by a few very good futures) |
+| Bad / good case (5th / 95th percentile) | 8,245 / 39,050 |
+| **Value at Risk, 95 %** | **1,755**: with 95 % confidence you won't lose more than this |
+| Chance of ending below 10,000 | 10.8 % |
+| Best speedup on the 5-core test VM | **2.56×** (19.5 s → 7.6 s, 3 M trials, 5 MPI processes) |
+| Serial vs parallel results | **bit-identical** for all 16 tested processes × threads layouts |
+| Accuracy vs exact computation | within **0.005 %** (5 M trials) |
+
+## Objectives achieved
+
+The objectives from the project proposal, and where each is shown:
+
+| # | Objective | Status | Evidence |
+|---|---|---|---|
+| O1 | Monte Carlo engine: month-by-month growth under random returns | ✅ | [src/core/](src/core/); simulated mean equals V0·(1 + μ/12)^T within 0.3 SE ([test_analytic_moments.cpp](tests/cpp/test_analytic_moments.cpp)) |
+| O2 | Hybrid MPI + OpenMP parallelisation (processes → threads) | ✅ | [src/hybrid/main_hybrid.cpp](src/hybrid/main_hybrid.cpp); `mpirun -np P ... --threads T` equals serial for 16 layouts ([consistency_test.sh](tests/consistency_test.sh)) |
+| O3a | Median projected value over time | ✅ | `median` column of `fan_chart.csv` ([example](results/sample/fan_chart.csv)) |
+| O3b | Best/worst-case bands (P5 / P95) | ✅ | `p05`, `p95` columns of `fan_chart.csv`; shaded bands in the [fan chart](docs/images/fan_chart.png) |
+| O3c | Value at Risk at a confidence level | ✅ | `risk.var` in `summary.json` ([example](results/sample/summary.json)); [distribution chart](docs/images/distribution.png) |
+| O4 | Benchmark: time, speedup, scalability for varying processes/threads | ✅ | [results/benchmark.csv](results/benchmark.csv), 4 charts, [benchmark report](docs/benchmark-report.md) |
+| O5 | Simple, clear output: charts and a basic dashboard | ✅ | [fan chart](docs/images/fan_chart.png), [distribution](docs/images/distribution.png), Streamlit [dashboard](dashboard/app.py) |
+
+## Quick start
+
+On Ubuntu 24.04 (native, VirtualBox VM or WSL2):
 
 ```bash
 sudo apt update
 sudo apt install -y build-essential openmpi-bin libopenmpi-dev python3-venv python3-pip git
+git clone https://github.com/maryammustafa05/parallel-monte-carlo-simulator.git
+cd parallel-monte-carlo-simulator
+bash scripts/setup_env.sh        # checks the tools, creates .venv with the Python packages (~1 min)
+make                             # builds build/mc_serial and build/mc_hybrid (no warnings)
+make test                        # every test, ~1 min → "ALL TESTS PASSED"
 ```
 
-Then, from the repository root:
+**Run a simulation and draw the charts** (about 10 s):
 
 ```bash
-bash scripts/setup_env.sh        # checks the tools, creates .venv, installs Python packages
-source .venv/bin/activate
+bash scripts/run_demo.sh         # 1,000,000 futures on up to 4 MPI processes → docs/images/*.png
 ```
 
-Verified on the development VM: g++ 13.3.0, Open MPI 4.1.6, Python 3.12.3, 5 logical cores.
-
-## Quick check: MPI + OpenMP "hello"
-
-```bash
-make                                                    # builds build/hello
-OMP_NUM_THREADS=2 mpirun --bind-to none -np 2 ./build/hello
-```
-
-Expected output: four lines, one per (rank, thread) pair. The order varies from run to run.
+Its simulation step prints (real run on the 5-core VM):
 
 ```
-hello from rank 0 of 2, thread 0 of 2
-hello from rank 0 of 2, thread 1 of 2
-hello from rank 1 of 2, thread 0 of 2
-hello from rank 1 of 2, thread 1 of 2
-```
-
-### Known harmless message: "Authorization required, but no authorization protocol specified"
-
-On a VM with a desktop, Open MPI's hardware-detection library (hwloc) tries to
-contact the display server to look for GPUs and prints this line several times.
-It does not affect results. To silence it, disable hwloc's graphics plugin:
-
-```bash
-export HWLOC_COMPONENTS=-gl      # add to ~/.bashrc to make it permanent
-```
-
-## Run the serial simulator
-
-```bash
-make                                   # builds build/mc_serial (and the tests)
-./build/mc_serial --trials 1000000     # 1 million futures, 120 months, defaults below
-./build/mc_serial --help               # all options
-```
-
-Real output on the development VM (seed 42, defaults: V0 = 10 000, mu = 7 %/year,
-sigma = 15 %/year, 120 months):
-
-```
-mc_serial: 1000000 trials x 120 months, 1 process(es) x 1 thread(s)
-  time: total 30.919 s (compute 30.913 s, reduce 0.000 s)
+mc_hybrid: 1000000 trials x 120 months, 4 process(es) x 1 thread(s)
+  time: total 2.843 s (compute 2.837 s, reduce 0.007 s)
   final value: mean 20093.63  median 17983.26  P5 8245.17  P95 39049.85
   VaR(95%): 1754.83   P(loss): 0.1075   histogram overflow: low 0, high 0
-  checksum ...   wrote results/run/fan_chart.csv and results/run/summary.json
+  checksum 8d550353ce5046de   wrote results/demo/{fan_chart.csv, final_hist.csv, summary.json}
 ```
 
-In words: after 10 years the typical (median) outcome is about 17 980, the average is
-about 20 090, and with 95 % confidence you will not lose more than about 1 755 of
-your 10 000. About 10.8 % of the futures end below the starting amount.
-The simulated mean (20 093.63) matches the exact formula V0·(1 + mu/12)^120 = 20 096.61
-to within 0.3 standard errors.
-
-Outputs (format details in [CLAUDE.md](CLAUDE.md) section 8):
-
-| File | Contents |
-|---|---|
-| `results/run/fan_chart.csv` | per month: P5, P25, median, P75, P95, mean |
-| `results/run/summary.json` | parameters, final-value stats, VaR, overflow counters, histogram checksum, timing (+ an `exact` section with `--exact`) |
-| `results/run/final_hist.csv` | histogram of the final month: `bin_lower,bin_upper,count` (for the distribution chart) |
-
-**Note on speed:** this 30.9 s run was taken while the VM was running slowly. Later the same run took about 6.5 s (see the parallel section below). Speed changes the times, never the results.
-
-## Run in parallel (MPI processes × OpenMP threads)
+**Run it yourself**, serially or with P processes × T threads. Same seed means same results
+and checksum:
 
 ```bash
-export HWLOC_COMPONENTS=-gl      # optional: hides a harmless hwloc message (see above)
+./build/mc_serial --trials 1000000
 mpirun --bind-to none -np 2 ./build/mc_hybrid --trials 1000000 --threads 2
 ```
 
-- `-np P` starts P **processes**. The 4096-trial chunks are split into P contiguous
-  blocks (if they don't divide evenly, the first processes get one extra chunk).
-- `--threads T` starts T OpenMP **threads** inside each process. They share that
-  process's block, each filling a private histogram that is merged at the end.
-- `MPI_Reduce` then adds all processes' histograms and sums on process 0, which is
-  the only one that writes files.
-- `--bind-to none` stops Open MPI from pinning each process to one core, which would
-  squeeze all of its threads onto that core. If you ask for more processes than the
-  VM has cores, also add `--oversubscribe`.
-
-Because every chunk has its own random seed, the result does not depend on P or T.
-The `checksum` (a fingerprint of every histogram count) is identical for `mc_serial`
-and every `mpirun -np 1/2/3/4 ... --threads 1/2/4` combination (checked by `make test`).
-
-Real runs on the development VM, 1 000 000 trials × 120 months, one run each,
-checksum `8d550353ce5046de` every time:
-
-| Processes × threads | Workers | Total | Compute | Reduce (MPI) | Speedup vs serial |
-|---|---|---|---|---|---|
-| `mc_serial` | 1 | 6.46 s | 6.46 s | — | 1.00 |
-| 1 × 1 | 1 | 6.26 s | 6.26 s | 0.000 s | 1.03 |
-| 2 × 1 | 2 | 3.50 s | 3.50 s | 0.003 s | 1.85 |
-| 2 × 2 | 4 | 2.45 s | 2.45 s | 0.002 s | 2.64 |
-| 1 × 4 | 4 | 2.43 s | 2.43 s | 0.000 s | 2.66 |
-| 4 × 1 | 4 | 2.49 s | 2.48 s | 0.004 s | 2.60 |
-| 5 × 1 | 5 | 2.06 s | 2.06 s | 0.006 s | 3.13 |
-
-What this shows: combining results is almost free (a few milliseconds to send
-about 2 MB of counts per process), so nearly all the time is simulation. Four
-workers give about 2.6× instead of 4×. The likely reason is that the host CPU has only 4
-physical cores shared with Windows, but this is a first look, not the benchmark.
-The full benchmark below repeats every configuration 3 times and reports medians.
-
-**About the VM's speed:** during Phases 1–2 the same serial run took about 31 s and
-single-threaded times jumped around by up to 2×. When these numbers were taken it
-was steady at about 6.5 s. Host conditions (power mode, other Windows programs)
-clearly matter a lot, so benchmark runs must all be taken in one session under the
-same conditions.
-
-## How we know the numbers are right
-
-The fan chart and VaR are read from per-month histograms (memory stays at about 2 MB
-however many trials you run). Two independent checks show this shortcut is accurate:
-
-**1. `--exact` mode.** It also keeps every final value, sorts them, and computes the true
-percentiles and VaR, then reports how far the histogram answers are from them:
+**Dashboard**: sliders, a Run button, charts:
 
 ```bash
-mpirun --bind-to none -np 5 ./build/mc_hybrid --trials 5000000 --exact
+.venv/bin/streamlit run dashboard/app.py      # then open http://localhost:8501
 ```
 
-Real results (the plan's limit is 1 % difference):
+**Benchmark** (10–20 minutes): `make bench`.
 
-| Trials | Median | P5 | P95 | VaR (95 %) |
-|---|---|---|---|---|
-| 1 000 000 | 0.0021 % | 0.0003 % | 0.0012 % | 0.0013 % |
-| 5 000 000 | 0.0001 % | 0.0010 % | 0.0023 % | 0.0049 % |
+Every option, the output files, the dashboard and troubleshooting are explained in the
+**[user guide](docs/user-guide.md)**. If Open MPI prints *"Authorization required, but no
+authorization protocol specified"* on a VM, it's harmless: `export HWLOC_COMPONENTS=-gl` hides it.
 
-`--exact` is for validation only (`--trials` ≤ 10 000 000). On MPI the values are
-collected with `MPI_Gatherv` after the timer stops, so it never distorts timings.
+## How it works
 
-**2. An independent NumPy implementation** ([tests/python/reference_numpy.py](tests/python/reference_numpy.py)).
-It shares no code with the C++ engine, uses a different random generator (PCG64) and exact
-percentiles. Because the random numbers differ, the results differ by Monte Carlo noise,
-so the test ([tests/python/test_reference.py](tests/python/test_reference.py)) requires
-agreement within 4 standard errors (SE). Real output, 200 000 trials each:
+1. **The model.** Each simulated future starts at V0. Every month a random return
+   r = max(−1, μ/12 + σ/√12 · Z), with Z ~ Normal(0, 1), is applied: V ← V·(1 + r).
+2. **No paths are stored.** Each month has a histogram of 2048 log-spaced bins; a trial only
+   adds 1 to the right bin. Memory is about 2 MB per worker for any number of trials, and
+   merging results is just adding counts.
+3. **Chunks with their own seeds.** Trials are cut into chunks of 4096, and each chunk's random
+   numbers depend only on (seed, chunk number). Whoever runs a chunk gets the same numbers, so
+   results are identical for any layout. A printed **checksum** proves it.
+4. **Two levels of parallelism.** MPI gives each process a contiguous block of chunks;
+   OpenMP threads share the block, each filling a private histogram (no locks). Threads merge
+   once in `omp critical`; processes combine with `MPI_Reduce` onto process 0, which writes
+   the results.
 
-```
-  final p05   : C++    8254.39  NumPy    8228.08  diff +1.01 SE
-  final median: C++   17977.86  NumPy   17967.44  diff +0.31 SE
-  final p95   : C++   39085.69  NumPy   39103.76  diff -0.15 SE
-  month  60 median: C++   13406.02  NumPy   13409.39  diff -0.19 SE
-  mean     : C++   20095.24  NumPy   20095.43  diff -0.01 SE
-  VaR      : C++    1745.66  NumPy    1771.92  diff -1.01 SE
-  P(loss)  : C++     0.1075  NumPy     0.1083  diff -0.80 SE
-```
-
-Every one of the 19 comparisons is within ±1.8 SE. The test is also sensitive: if the
-reference used a 1-point higher return (8 % instead of 7 %), the median would differ
-by about 50 SE and the test would fail.
-
-## Charts and dashboard
-
-**One command** builds, runs 1 000 000 futures on up to 4 MPI processes, and draws both charts:
-
-```bash
-bash scripts/run_demo.sh                    # extra flags are passed on, e.g. --sigma 0.25
-```
-
-Or draw the charts for any run folder yourself:
-
-```bash
-.venv/bin/python scripts/plot_fan_chart.py    --input results/run --output docs/images/fan_chart.png
-.venv/bin/python scripts/plot_distribution.py --input results/run --output docs/images/distribution.png
-```
-
-| Chart | What it shows |
-|---|---|
-| [Fan chart](docs/images/fan_chart.png) (top of this page) | For every month: the middle 50 % and 90 % of futures as shaded bands, the median (typical) and mean (average) path, and the starting amount |
-| [Distribution](docs/images/distribution.png) (below) | Where the portfolio ends after the horizon. The worst 5 % of futures are shaded orange; the orange line is the 5th percentile, and the gap from it to the starting amount is the 95 % VaR (labels follow `--confidence`, e.g. worst 1 % at 99 %) |
+Details: **[architecture](docs/architecture.md)** (components, data flow, a run step by step)
+and **[design decisions](docs/design-decisions.md)** (why each choice, what else we
+considered, and how we verified it).
 
 ![Distribution of final values with VaR](docs/images/distribution.png)
 
-The mean ends above the median because a few very good futures pull the average up
-(the long right tail in the distribution chart). The median is the better "typical outcome".
+## Correctness
 
-### Dashboard
+| Check | Result |
+|---|---|
+| Exact formulas: E[V_T] = V0(1 + μ/12)^T, E[V_T²] | simulated values within 4 standard errors (e.g. 20,093.63 vs 20,096.61 = −0.3 SE) |
+| Histogram vs exact sorting (`--exact`) | median, P5, P95, VaR within **0.005 %** at 5 M trials (target < 1 %) |
+| Independent NumPy implementation (other code, other RNG) | 19 statistics agree within ±1.8 SE; an 8 % instead of 7 % return would show as 50 SE |
+| Serial vs parallel | identical checksums for 16 layouts: 1–4 processes × 1, 2, 4 threads, uneven splits, processes with no work |
+| Edge cases | 1 trial, zero volatility (exact answer known), 1 month, portfolios wiped out, invalid input |
 
-```bash
-.venv/bin/streamlit run dashboard/app.py
-```
+## Performance
 
-Then open **http://localhost:8501**. When working over VS Code Remote-SSH, VS Code
-forwards the port from the VM automatically (see the *Ports* tab), so the address works
-in the Windows browser. In the sidebar, choose the investment (amount, return,
-volatility, years, VaR confidence), the number of simulated futures, and the number of
-MPI processes and OpenMP threads, then press **Run simulation**. The dashboard runs
-`mpirun ... build/mc_hybrid` and shows the median, VaR, chance of loss and compute time,
-the two charts, a table of the fan chart, and the exact command and output. Each run is
-saved under `results/dashboard/<date-time>/`.
-If your browser or Streamlit is in dark mode, the charts are drawn in matching dark
-colours. The plot scripts can do the same with `--theme dark` (default `light`).
+![Speedup vs number of workers](docs/images/benchmark_speedup.png)
 
-`make test` also checks the dashboard: [tests/python/test_dashboard.py](tests/python/test_dashboard.py)
-loads the real app with Streamlit's `AppTest`, presses **Run simulation** for a
-2 processes × 2 threads run, and checks that the results appear.
+3,000,000 trials × 120 months on a VirtualBox VM with 5 cores (host: Intel i7-10610U, 4
+physical cores, 15 W), medians of 3 interleaved runs:
 
-## Benchmark: how much faster is it?
-
-```bash
-make bench        # ~10-20 min: every processes × threads layout, 3 interleaved repeats, then charts
-```
-
-Strong scaling, 3,000,000 trials × 120 months on the 5-core development VM (medians of 3 runs;
-full tables, method and discussion in **[docs/benchmark-report.md](docs/benchmark-report.md)**):
-
-![Speedup](docs/images/benchmark_speedup.png)
-
-| Layout (processes × threads) | Median time | Speedup | Efficiency |
+| Processes × threads | Time | Speedup | Efficiency |
 |---|---|---|---|
-| `mc_serial` (baseline) | 19.51 s | 1.00 | 100 % |
+| serial baseline (`mc_serial`, no MPI/OpenMP) | 19.51 s | 1.00 | 100 % |
 | 2 × 1 | 11.63 s | 1.68 | 84 % |
-| 1 × 3 | 8.83 s | 2.21 | 74 % |
 | 1 × 4 | 8.42 s | 2.32 | 58 % |
-| 5 × 1 | **7.62 s** | **2.56** | 51 % |
+| **5 × 1** | **7.62 s** | **2.56** | 51 % |
 | 10 workers on 5 cores (oversubscribed) | 7.5–9.6 s | 2.0–2.6 | 20–26 % |
 
-**Why not 5× on 5 cores?** Not because of serial code or communication: the MPI reduce takes
-2–8 ms (< 0.1 %), and Amdahl's law with our measured serial part predicts 4.99×. The weak-scaling
-test shows that each core gets slower when the others are busy (same work per process, but 2×
-the time at 5 processes). A follow-up test traced much of that to the **shared 8 MB CPU cache**:
-each worker's 2 MB of histograms stop fitting when 4–5 workers run together (with 0.25 MB
-histograms, weak-scaling efficiency rises from 74 % to 92 %). The rest comes from a 15 W laptop
-CPU with only 4 physical cores slowing its clock under full load. Charts: [time](docs/images/benchmark_time.png),
-[efficiency heat-map](docs/images/benchmark_efficiency.png), [weak scaling](docs/images/benchmark_weak.png).
+**Why not 5×?** Not serial code or communication: the MPI reduce takes 2–8 ms (< 0.1 %),
+and Amdahl's law with the measured serial part predicts 4.99×. A weak-scaling test shows each
+core gets slower when the others are busy, and an experiment traced much of that to the
+**shared 8 MB CPU cache**: each worker's 2 MB of histograms stop fitting at 4–5 workers
+(smaller histograms raised weak-scaling efficiency from 74 % to 92 %). The rest is a
+power-limited laptop CPU with 4 physical cores. Full method, tables and charts:
+**[benchmark report](docs/benchmark-report.md)**.
 
 ## Testing
 
-```bash
-make test         # everything below; about 1 minute
-```
+`make test` runs everything in about a minute, and passes on a fresh clone after
+`bash scripts/setup_env.sh`. [GitHub Actions](.github/workflows/ci.yml) runs it on every push.
 
-| Level | What is checked | Where |
+| Level | What | Where |
 |---|---|---|
-| Unit | RNG determinism and normal distribution; accumulator merge; work split; percentiles, VaR, zeros; input parsing and every limit | [tests/cpp/](tests/cpp/) |
-| Analytic | Simulated mean and mean of squares equal the exact formulas within 4 standard errors | [test_analytic_moments.cpp](tests/cpp/test_analytic_moments.cpp) |
-| Consistency | `mc_serial` == `mc_hybrid` for 16 processes × threads layouts, incl. uneven splits, empty processes, `--exact` | [tests/consistency_test.sh](tests/consistency_test.sh) |
-| Edge cases | 1 trial, fewer trials than workers, zero volatility (exact answer known), 1 month, portfolios wiped out, bad input under `mpirun` | [tests/edge_cases.sh](tests/edge_cases.sh) |
-| Independent reference | C++ vs a separate NumPy implementation, 19 statistics within 4 SE | [tests/python/test_reference.py](tests/python/test_reference.py) |
-| Charts and dashboard | Every chart draws for normal and extreme runs in both themes; benchmark maths; a dashboard run completes | [tests/python/](tests/python/) |
+| Unit (C++) | RNG, merging, work split, percentiles/VaR, input parsing and limits: 244 checks | [tests/cpp/](tests/cpp/) |
+| Consistency | serial == parallel for 16 layouts | [tests/consistency_test.sh](tests/consistency_test.sh) |
+| Edge cases | unusual inputs, serial and under `mpirun` | [tests/edge_cases.sh](tests/edge_cases.sh) |
+| Python | NumPy reference, charts for extreme runs, benchmark maths, dashboard run | [tests/python/](tests/python/) |
 
-`make test` passes from a fresh copy of the repository after `bash scripts/setup_env.sh`
-(checked in Phase 7). [GitHub Actions](.github/workflows/ci.yml) runs the same steps on
-every push. To use a different Python: `PYTHON=/path/to/python make test`.
+## Documentation
 
-**Input limits.** The programs reject inputs that used to crash or produce broken output:
-`--mu` must be in (−1, 10], `--sigma` in [0, 10], `--initial` in (0, 10¹²], `--months`
-in [1, 1200], `--bins` in [2, 65536], `--threads` in [1, 256], and combinations that could
-exceed the range of a double (for example `--sigma 10 --months 1200`). A portfolio that loses
-100 % in a month stays at 0. Such futures are counted separately, so percentiles, VaR and the
-new `prob_total_loss` stay correct even when many portfolios are wiped out.
-
-## Build targets
-
-| Command | What it does |
+| Document | For |
 |---|---|
-| `make` | Builds everything: `build/hello`, `build/mc_serial`, `build/mc_hybrid`, test binaries |
-| `make serial` | Serial baseline `build/mc_serial` |
-| `make hybrid` | MPI + OpenMP engine `build/mc_hybrid` |
-| `make test` | Builds and runs all tests (see *Testing* above; needs `.venv`) |
-| `make bench` | Full scalability benchmark + charts (~10–20 min); data in `results/benchmark*.csv` |
-| `make clean` | Deletes `build/` |
+| [User guide](docs/user-guide.md) | installing, every option, reading the outputs, charts, dashboard, benchmark, troubleshooting |
+| [Architecture](docs/architecture.md) | components, data flow, what happens during a parallel run, memory, file formats |
+| [Design decisions](docs/design-decisions.md) | why histograms, per-chunk seeds, own RNG, the work split, fair benchmarking, and more |
+| [Benchmark report](docs/benchmark-report.md) | method, all results, and the explanation of the speedup curve |
+| [Demo outline](docs/demo-outline.md) | a timed 5-minute live demo with commands and likely questions |
+| [Proposal](docs/proposal/proposal.pdf) | the original project proposal |
+| [CLAUDE.md](CLAUDE.md) | the full technical specification the project was built from |
 
 ## Repository layout
 
 ```
-src/core/      simulation engine shared by both programs (no MPI / OpenMP here)
-src/serial/    serial baseline driver
-src/hybrid/    MPI + OpenMP driver
-tests/         C++ unit tests, Python reference check, serial-vs-parallel consistency
-scripts/       setup, demo, benchmark and plotting scripts
-dashboard/     Streamlit dashboard
-docs/          proposal, design notes, benchmark report, images
-results/       run outputs (only results/sample/ is committed)
+src/core/       simulation engine shared by every program (no MPI / OpenMP)
+src/serial/     serial baseline: mc_serial
+src/hybrid/     MPI + OpenMP driver: mc_hybrid
+tests/          C++ unit tests, consistency and edge-case scripts, Python tests
+scripts/        setup, demo, benchmark runner, chart scripts
+dashboard/      Streamlit dashboard
+docs/           documentation, benchmark report, chart images
+results/        sample/ (one small example run) and the benchmark data; other runs are not committed
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the full specification and design decisions.
+## Known limitations
+
+- **One machine only.** All measurements are on a single 5-core VM, where processes and
+  threads compete for the same cache, memory and power budget. MPI's main strength, spreading
+  work over several machines, isn't measured.
+- **VM timing noise.** The host's power state changes speeds by up to 2× between sessions; the
+  benchmark uses interleaved repeats and medians, and the charts show the spread.
+- **Deliberately simple model.** Independent normal monthly returns with a −100 % floor: no
+  fat tails, no monthly contributions, no real market data (out of scope for this project).
 
 ## Roadmap
 
@@ -323,7 +202,7 @@ See [CLAUDE.md](CLAUDE.md) for the full specification and design decisions.
 - [x] **Phase 5:** Matplotlib charts and Streamlit dashboard (O5)
 - [x] **Phase 6:** benchmark and scalability report (O4)
 - [x] **Phase 7:** edge-case tests and hardening
-- [ ] **Phase 8:** final documentation and demo
+- [x] **Phase 8:** final documentation and demo
 
 ## License
 

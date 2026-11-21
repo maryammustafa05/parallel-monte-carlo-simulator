@@ -1,0 +1,8 @@
+{
+  "params": {"initial": 10000, "mu": 0.07, "sigma": 0.15, "months": 120, "trials": 100000, "confidence": 0.95, "seed": 42},
+  "parallel": {"mpi_processes": 1, "omp_threads": 1},
+  "final_value": {"mean": 20093.15669, "std": 9979.909758, "min": 2395.950781, "max": 139540.8932, "median": 17992.58753, "p05": 8296.240422, "p95": 39047.19488},
+  "risk": {"var": 1703.759578, "threshold": 8296.240422, "prob_loss": 0.10598, "prob_total_loss": 0, "confidence": 0.95},
+  "histogram": {"bins": 2048, "overflow_low": 0, "overflow_high": 0, "checksum": "655390eaf91b5efe"},
+  "timing": {"total_s": 1.85403731, "compute_s": 1.85403731, "reduce_s": 0}
+}

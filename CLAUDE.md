@@ -247,6 +247,7 @@ parallel-monte-carlo-simulator/
 │   ├── design-decisions.md           # D1–D5 in student-friendly language
 │   ├── user-guide.md
 │   ├── benchmark-report.md           # filled with real numbers in Phase 6
+│   ├── demo-outline.md               # timed 5-minute viva demo + likely questions
 │   └── images/                       # charts used by README
 └── results/
     └── sample/                       # one small committed example run
@@ -389,12 +390,12 @@ OpenMPI notes: running more ranks than cores needs `mpirun --oversubscribe`. To 
 
 ## 14. Definition of done (whole project)
 
-- [ ] O1–O5 each have a working demo and a test or artifact listed in section 2.
-- [ ] `make && make test` passes on a clean clone.
-- [ ] README has real benchmark results, charts, and up-to-date roadmap.
-- [ ] `docs/benchmark-report.md` explains the speedup curve honestly.
-- [ ] Proposal PDF stored in `docs/proposal/`.
-- [ ] Team can run the 5-minute demo from the README alone.
+- [x] O1–O5 each have a working demo and a test or artifact listed in section 2.
+- [x] `make && make test` passes on a clean clone (verified on a fresh copy in Phases 7 and 8).
+- [x] README has real benchmark results, charts, and up-to-date roadmap.
+- [x] `docs/benchmark-report.md` explains the speedup curve honestly.
+- [ ] Proposal PDF stored in `docs/proposal/`. (still missing: add `docs/proposal/proposal.pdf`)
+- [x] Team can run the 5-minute demo from the README alone (`docs/demo-outline.md`).
 
 ---
 
