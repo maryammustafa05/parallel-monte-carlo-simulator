@@ -9,9 +9,11 @@ Course project for Parallel & Distributed Computing (PDC), BS Software Engineeri
 FAST NUCES Karachi, Fall 2026.
 Team: Maryam Mustafa (23k-2046), Umaima Fatima (23k-3043).
 
-> **Status:** Phase 5 done: the engine runs on MPI processes × OpenMP threads with results
+> **Status:** Phase 6 done: the engine runs on MPI processes × OpenMP threads with results
 > identical to the serial run, is validated against exact values and an independent NumPy
-> implementation, and has charts plus a Streamlit dashboard. Next: Phase 6 (benchmark).
+> implementation, has charts plus a Streamlit dashboard, and has been benchmarked
+> (best: **2.56× on 5 cores**, see [benchmark report](docs/benchmark-report.md)).
+> Next: Phase 7 (edge-case tests and hardening).
 
 ![Fan chart of 1,000,000 simulated futures](docs/images/fan_chart.png)
 
@@ -134,7 +136,7 @@ What this shows: combining results is almost free (a few milliseconds to send
 about 2 MB of counts per process), so nearly all the time is simulation. Four
 workers give about 2.6× instead of 4×. The likely reason is that the host CPU has only 4
 physical cores shared with Windows, but this is a first look, not the benchmark.
-Phase 6 repeats every configuration 3 times and reports medians.
+The full benchmark below repeats every configuration 3 times and reports medians.
 
 **About the VM's speed:** during Phases 1–2 the same serial run took about 31 s and
 single-threaded times jumped around by up to 2×. When these numbers were taken it
@@ -230,6 +232,35 @@ colours. The plot scripts can do the same with `--theme dark` (default `light`).
 loads the real app with Streamlit's `AppTest`, presses **Run simulation** for a
 2 processes × 2 threads run, and checks that the results appear.
 
+## Benchmark: how much faster is it?
+
+```bash
+make bench        # ~10-20 min: every processes × threads layout, 3 interleaved repeats, then charts
+```
+
+Strong scaling, 3,000,000 trials × 120 months on the 5-core development VM (medians of 3 runs;
+full tables, method and discussion in **[docs/benchmark-report.md](docs/benchmark-report.md)**):
+
+![Speedup](docs/images/benchmark_speedup.png)
+
+| Layout (processes × threads) | Median time | Speedup | Efficiency |
+|---|---|---|---|
+| `mc_serial` (baseline) | 19.51 s | 1.00 | 100 % |
+| 2 × 1 | 11.63 s | 1.68 | 84 % |
+| 1 × 3 | 8.83 s | 2.21 | 74 % |
+| 1 × 4 | 8.42 s | 2.32 | 58 % |
+| 5 × 1 | **7.62 s** | **2.56** | 51 % |
+| 10 workers on 5 cores (oversubscribed) | 7.5–9.6 s | 2.0–2.6 | 20–26 % |
+
+**Why not 5× on 5 cores?** Not because of serial code or communication: the MPI reduce takes
+2–8 ms (< 0.1 %), and Amdahl's law with our measured serial part predicts 4.99×. The weak-scaling
+test shows that each core gets slower when the others are busy (same work per process, but 2×
+the time at 5 processes). A follow-up test traced much of that to the **shared 8 MB CPU cache**:
+each worker's 2 MB of histograms stop fitting when 4–5 workers run together (with 0.25 MB
+histograms, weak-scaling efficiency rises from 74 % to 92 %). The rest comes from a 15 W laptop
+CPU with only 4 physical cores slowing its clock under full load. Charts: [time](docs/images/benchmark_time.png),
+[efficiency heat-map](docs/images/benchmark_efficiency.png), [weak scaling](docs/images/benchmark_weak.png).
+
 ## Build targets
 
 | Command | What it does |
@@ -238,7 +269,7 @@ loads the real app with Streamlit's `AppTest`, presses **Run simulation** for a
 | `make serial` | Serial baseline `build/mc_serial` |
 | `make hybrid` | MPI + OpenMP engine `build/mc_hybrid` |
 | `make test` | Builds and runs all tests: C++ unit tests, end-to-end checks, serial == hybrid consistency, C++ vs NumPy, dashboard (needs `.venv`) |
-| `make bench` | Runs the scalability benchmark (Phase 6) |
+| `make bench` | Full scalability benchmark + charts (~10–20 min); data in `results/benchmark*.csv` |
 | `make clean` | Deletes `build/` |
 
 ## Repository layout
@@ -264,7 +295,7 @@ See [CLAUDE.md](CLAUDE.md) for the full specification and design decisions.
 - [x] **Phase 3:** MPI processes (O2, part 2)
 - [x] **Phase 4:** analytics: percentiles, VaR, exact-mode validation (O3)
 - [x] **Phase 5:** Matplotlib charts and Streamlit dashboard (O5)
-- [ ] **Phase 6:** benchmark and scalability report (O4)
+- [x] **Phase 6:** benchmark and scalability report (O4)
 - [ ] **Phase 7:** edge-case tests and hardening
 - [ ] **Phase 8:** final documentation and demo
 

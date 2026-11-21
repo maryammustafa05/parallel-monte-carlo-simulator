@@ -278,11 +278,11 @@ month,p05,p25,median,p75,p95,mean
 
 With `--exact` (≤ 10⁷ trials), `summary.json` also gets `"exact": {"median","p05","p95","var","rel_diff_median","rel_diff_p05","rel_diff_p95","rel_diff_var"}` (exact values from all final values, and the histogram's relative difference from them).
 
-`results/benchmark.csv`
+`results/benchmark.csv` (strong scaling) and `results/benchmark_weak.csv` (weak scaling)
 ```
-mode,processes,threads,total_workers,trials,run,total_s,compute_s,reduce_s
+mode,processes,threads,total_workers,trials,run,total_s,compute_s,reduce_s,oversubscribed
 ```
-(`mode` is `serial` or `hybrid`.) `plot_benchmark.py` derives median, speedup, efficiency.
+(`mode` is `serial` or `hybrid`; `oversubscribed` is 1 when P·T > cores, i.e. unpinned.) `plot_benchmark.py` derives median, speedup, efficiency, Karp–Flatt into `results/benchmark_summary.csv`; `results/benchmark_env.txt` records the machine.
 
 ---
 

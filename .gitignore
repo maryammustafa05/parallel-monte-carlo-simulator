@@ -4,6 +4,11 @@ build/
 # Run outputs (keep only the small committed sample run)
 results/*
 !results/sample/
+# Benchmark data behind docs/benchmark-report.md (small, and it is a deliverable)
+!results/benchmark.csv
+!results/benchmark_weak.csv
+!results/benchmark_summary.csv
+!results/benchmark_env.txt
 
 # Python
 __pycache__/

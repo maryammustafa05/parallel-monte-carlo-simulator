@@ -72,9 +72,10 @@ $(BUILD)/tests/%: tests/cpp/%.cpp $(CORE_OBJS)
 test: tests serial hybrid
 	@bash tests/run_tests.sh
 
-# --- Placeholders (filled in later phases) --------------------------------
-bench:
-	@echo "[make] bench: not implemented yet (Phase 6)"
+# Full benchmark (~10-20 min): 3 repeats of every layout, then charts + summary.
+bench: serial hybrid
+	bash scripts/run_benchmark.sh --trials 3000000 --weak-trials 600000 --repeats 3
+	.venv/bin/python scripts/plot_benchmark.py
 
 # --- Helpers ---------------------------------------------------------------
 clean:
