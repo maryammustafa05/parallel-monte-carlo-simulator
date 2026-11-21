@@ -52,7 +52,7 @@ if ! bash tests/consistency_test.sh; then
 fi
 
 echo
-echo "== Python: C++ vs independent NumPy reference =="
+echo "== Python: C++ vs independent NumPy reference + dashboard =="
 # Prefer the project's virtual environment; fall back to the system python3.
 PYTHON=.venv/bin/python
 [ -x "$PYTHON" ] || PYTHON=python3

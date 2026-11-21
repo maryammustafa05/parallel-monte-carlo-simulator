@@ -225,13 +225,15 @@ parallel-monte-carlo-simulator/
 │   │   └── test_analytic_moments.cpp # E[V_T], E[V_T^2] vs formulas
 │   ├── python/
 │   │   ├── reference_numpy.py        # independent NumPy implementation
-│   │   └── test_reference.py         # C++ vs NumPy statistical agreement
+│   │   ├── test_reference.py         # C++ vs NumPy statistical agreement
+│   │   └── test_dashboard.py         # Streamlit AppTest: a run completes in the UI
 │   ├── consistency_test.sh           # serial == hybrid(P,T) for several (P,T)
 │   └── run_tests.sh
 ├── scripts/
 │   ├── setup_env.sh                  # checks/installs toolchain on Ubuntu/WSL2
 │   ├── run_demo.sh                   # one default run + plots
 │   ├── run_benchmark.sh              # full (P,T) matrix, 3 repeats → benchmark.csv
+│   ├── chart_style.py                # shared colours/fonts for all charts
 │   ├── plot_fan_chart.py
 │   ├── plot_distribution.py          # final-value histogram + VaR line
 │   └── plot_benchmark.py             # time, speedup, efficiency (+ weak scaling)

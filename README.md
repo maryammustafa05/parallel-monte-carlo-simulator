@@ -9,9 +9,11 @@ Course project for Parallel & Distributed Computing (PDC), BS Software Engineeri
 FAST NUCES Karachi, Fall 2026.
 Team: Maryam Mustafa (23k-2046), Umaima Fatima (23k-3043).
 
-> **Status:** Phase 4 done: the engine runs on MPI processes × OpenMP threads with results
-> identical to the serial run, and its percentiles and VaR are validated against exact values
-> and an independent NumPy implementation. Next: Phase 5 (charts and dashboard).
+> **Status:** Phase 5 done: the engine runs on MPI processes × OpenMP threads with results
+> identical to the serial run, is validated against exact values and an independent NumPy
+> implementation, and has charts plus a Streamlit dashboard. Next: Phase 6 (benchmark).
+
+![Fan chart of 1,000,000 simulated futures](docs/images/fan_chart.png)
 
 ---
 
@@ -182,6 +184,50 @@ Every one of the 19 comparisons is within ±1.8 SE. The test is also sensitive: 
 reference used a 1-point higher return (8 % instead of 7 %), the median would differ
 by about 50 SE and the test would fail.
 
+## Charts and dashboard
+
+**One command** builds, runs 1 000 000 futures on up to 4 MPI processes, and draws both charts:
+
+```bash
+bash scripts/run_demo.sh                    # extra flags are passed on, e.g. --sigma 0.25
+```
+
+Or draw the charts for any run folder yourself:
+
+```bash
+.venv/bin/python scripts/plot_fan_chart.py    --input results/run --output docs/images/fan_chart.png
+.venv/bin/python scripts/plot_distribution.py --input results/run --output docs/images/distribution.png
+```
+
+| Chart | What it shows |
+|---|---|
+| [Fan chart](docs/images/fan_chart.png) (top of this page) | For every month: the middle 50 % and 90 % of futures as shaded bands, the median (typical) and mean (average) path, and the starting amount |
+| [Distribution](docs/images/distribution.png) (below) | Where the portfolio ends after the horizon. The worst 5 % of futures are shaded orange; the orange line is the 5th percentile, and the gap from it to the starting amount is the 95 % VaR |
+
+![Distribution of final values with VaR](docs/images/distribution.png)
+
+The mean ends above the median because a few very good futures pull the average up
+(the long right tail in the distribution chart). The median is the better "typical outcome".
+
+### Dashboard
+
+```bash
+.venv/bin/streamlit run dashboard/app.py
+```
+
+Then open **http://localhost:8501**. When working over VS Code Remote-SSH, VS Code
+forwards the port from the VM automatically (see the *Ports* tab), so the address works
+in the Windows browser. In the sidebar, choose the investment (amount, return,
+volatility, years, VaR confidence), the number of simulated futures, and the number of
+MPI processes and OpenMP threads, then press **Run simulation**. The dashboard runs
+`mpirun ... build/mc_hybrid` and shows the median, VaR, chance of loss and compute time,
+the two charts, a table of the fan chart, and the exact command and output. Each run is
+saved under `results/dashboard/<date-time>/`.
+
+`make test` also checks the dashboard: [tests/python/test_dashboard.py](tests/python/test_dashboard.py)
+loads the real app with Streamlit's `AppTest`, presses **Run simulation** for a
+2 processes × 2 threads run, and checks that the results appear.
+
 ## Build targets
 
 | Command | What it does |
@@ -189,7 +235,7 @@ by about 50 SE and the test would fail.
 | `make` | Builds everything: `build/hello`, `build/mc_serial`, `build/mc_hybrid`, test binaries |
 | `make serial` | Serial baseline `build/mc_serial` |
 | `make hybrid` | MPI + OpenMP engine `build/mc_hybrid` |
-| `make test` | Builds and runs all tests: C++ unit tests, end-to-end checks, serial == hybrid consistency, C++ vs NumPy (needs `.venv`) |
+| `make test` | Builds and runs all tests: C++ unit tests, end-to-end checks, serial == hybrid consistency, C++ vs NumPy, dashboard (needs `.venv`) |
 | `make bench` | Runs the scalability benchmark (Phase 6) |
 | `make clean` | Deletes `build/` |
 
@@ -215,7 +261,7 @@ See [CLAUDE.md](CLAUDE.md) for the full specification and design decisions.
 - [x] **Phase 2:** OpenMP threads (O2, part 1)
 - [x] **Phase 3:** MPI processes (O2, part 2)
 - [x] **Phase 4:** analytics: percentiles, VaR, exact-mode validation (O3)
-- [ ] **Phase 5:** Matplotlib charts and Streamlit dashboard (O5)
+- [x] **Phase 5:** Matplotlib charts and Streamlit dashboard (O5)
 - [ ] **Phase 6:** benchmark and scalability report (O4)
 - [ ] **Phase 7:** edge-case tests and hardening
 - [ ] **Phase 8:** final documentation and demo
