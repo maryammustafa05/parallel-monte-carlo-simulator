@@ -46,6 +46,17 @@ BinLayout make_bin_layout(const Config& cfg) {
 
 uint64_t num_chunks(uint64_t trials) { return (trials + CHUNK_SIZE - 1) / CHUNK_SIZE; }
 
+void chunk_block(uint64_t total_chunks, int workers, int rank, uint64_t& first,
+                 uint64_t& count) {
+    const uint64_t p = static_cast<uint64_t>(workers);
+    const uint64_t r = static_cast<uint64_t>(rank);
+    const uint64_t base = total_chunks / p;
+    const uint64_t extra = total_chunks % p;  // this many ranks get one more chunk
+    count = base + (r < extra ? 1 : 0);
+    // Ranks before r each took `base` chunks, and min(r, extra) of them took one more.
+    first = r * base + std::min(r, extra);
+}
+
 int bin_index(const BinLayout& layout, int t, double v, Accumulator& acc) {
     // A value of 0 (a total loss after a -100 % month) has no logarithm.
     if (v <= 0.0) {

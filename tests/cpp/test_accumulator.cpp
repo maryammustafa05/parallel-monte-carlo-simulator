@@ -2,6 +2,7 @@
 // chunks between "workers" then merging gives exactly the single-worker result.
 // That second test is a preview of design decision D2 (needed in Phases 2-3).
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -87,8 +88,39 @@ static void test_split_equals_whole() {
     CHECK_NEAR(odd.month_sum[5], whole.month_sum[5], 1e-12 * whole.month_sum[5]);
 }
 
+// chunk_block must give every chunk to exactly one rank, in order, with sizes
+// differing by at most 1 — for even splits, uneven splits and more ranks than chunks.
+static void test_chunk_block() {
+    const uint64_t totals[] = {0, 1, 2, 13, 100, 245};
+    const int worker_counts[] = {1, 2, 3, 4, 7, 16};
+    for (uint64_t total : totals) {
+        for (int workers : worker_counts) {
+            uint64_t expected_first = 0, min_count = total, max_count = 0;
+            bool contiguous = true;
+            for (int r = 0; r < workers; ++r) {
+                uint64_t first = 0, count = 0;
+                mc::chunk_block(total, workers, r, first, count);
+                if (first != expected_first) contiguous = false;
+                expected_first += count;
+                min_count = std::min(min_count, count);
+                max_count = std::max(max_count, count);
+            }
+            CHECK(contiguous);
+            CHECK(expected_first == total);       // every chunk assigned exactly once
+            CHECK(max_count - min_count <= 1);    // balanced
+        }
+    }
+    // The case in the consistency test: 13 chunks on 3 ranks -> 5, 4, 4.
+    uint64_t first = 0, count = 0;
+    mc::chunk_block(13, 3, 0, first, count);
+    CHECK(first == 0 && count == 5);
+    mc::chunk_block(13, 3, 2, first, count);
+    CHECK(first == 9 && count == 4);
+}
+
 int main() {
     test_manual_merge();
     test_split_equals_whole();
+    test_chunk_block();
     return test::summary("test_accumulator");
 }

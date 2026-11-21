@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Consistency test (design decision D2): the parallel program must give the
-# SAME result as the serial one, whatever the number of threads.
+# SAME result as the serial one, whatever the number of processes and threads.
 #
 # What "same" means:
 #   - histogram checksum (all integer counts)      -> must be identical
-#   - fan-chart percentiles (p05..p95)              -> must be identical
-#     (they are computed only from the counts)
+#   - percentiles, VaR, prob_loss, min, max         -> must be identical
+#     (they come only from the integer counts and exact comparisons)
 #   - means, std                                    -> equal to ~1e-9 relative
 #     (floating-point sums added in a different order round slightly differently)
 #
@@ -14,30 +14,18 @@
 set -u
 cd "$(dirname "$0")/.."
 
-# 50 000 trials = 12 full chunks + 1 partial chunk (50000 = 12*4096 + 848),
-# so threads get uneven amounts of work on purpose.
-ARGS="--trials 50000 --months 60 --seed 2026"
-WORK=build/consistency
-THREAD_COUNTS="1 2 3 4"
+# Open MPI's hardware detection tries to reach the VM's display and prints a
+# harmless "Authorization required" line; this hides only that (see README).
+export HWLOC_COMPONENTS=-gl
 
+WORK=build/consistency
 rm -rf "$WORK"
 mkdir -p "$WORK"
-
-if ! ./build/mc_serial $ARGS --out "$WORK/serial" > /dev/null; then
-    echo "[consistency] mc_serial failed -> FAIL"
-    exit 1
-fi
-
 failed=0
-for threads in $THREAD_COUNTS; do
-    out="$WORK/hybrid_t$threads"
-    if ! ./build/mc_hybrid $ARGS --threads "$threads" --out "$out" > /dev/null; then
-        echo "[consistency] mc_hybrid --threads $threads failed -> FAIL"
-        failed=1
-        continue
-    fi
-    # Compare with Python's standard library only (no numpy needed).
-    if ! python3 - "$WORK/serial" "$out" "threads=$threads" <<'EOF'
+
+# compare_runs SERIAL_DIR PARALLEL_DIR LABEL -> exit 0 if they match
+compare_runs() {
+    python3 - "$1" "$2" "$3" <<'EOF'
 import csv, json, sys
 
 serial_dir, parallel_dir, label = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -78,9 +66,42 @@ if problems:
     sys.exit(1)
 print(f"[consistency] {label}: checksum {p['histogram']['checksum']} == serial -> PASS")
 EOF
-    then
+}
+
+# check_case NAME "ARGS" "PROCESS COUNTS" "THREAD COUNTS"
+check_case() {
+    local name=$1 args=$2 process_counts=$3 thread_counts=$4
+    local serial_dir="$WORK/$name/serial"
+    # shellcheck disable=SC2086  # $args must be split into separate flags
+    if ! ./build/mc_serial $args --out "$serial_dir" > /dev/null; then
+        echo "[consistency] $name: mc_serial failed -> FAIL"
         failed=1
+        return
     fi
-done
+    for np in $process_counts; do
+        for threads in $thread_counts; do
+            local out="$WORK/$name/np${np}_t${threads}"
+            local label
+            label=$(printf "%-6s np=%d threads=%d" "$name" "$np" "$threads")
+            # shellcheck disable=SC2086
+            if ! mpirun --bind-to none -np "$np" ./build/mc_hybrid $args --threads "$threads" \
+                    --out "$out" > /dev/null; then
+                echo "[consistency] $label: mc_hybrid failed -> FAIL"
+                failed=1
+                continue
+            fi
+            compare_runs "$serial_dir" "$out" "$label" || failed=1
+        done
+    done
+}
+
+# Main case: 50 000 trials = 12 full chunks + 1 partial chunk (50000 = 12*4096 + 848).
+# 13 chunks don't divide evenly by 2, 3 or 4 processes, and 50 000 is not
+# divisible by 3, so uneven splits are tested on purpose.
+check_case "main" "--trials 50000 --months 60 --seed 2026" "1 2 3 4" "1 2 4"
+
+# Tiny case: 5 000 trials = only 2 chunks, so with 3 or 4 processes some
+# processes get no work at all. They must not spoil min/max or the sums.
+check_case "tiny" "--trials 5000 --months 12 --seed 7" "3 4" "2"
 
 exit $failed

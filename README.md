@@ -9,8 +9,8 @@ Course project for Parallel & Distributed Computing (PDC), BS Software Engineeri
 FAST NUCES Karachi, Fall 2026.
 Team: Maryam Mustafa (23k-2046), Umaima Fatima (23k-3043).
 
-> **Status:** Phase 2 done: the serial engine works, and `mc_hybrid` runs it on several
-> OpenMP threads with results identical to the serial run. MPI processes come next (Phase 3).
+> **Status:** Phase 3 done: `mc_hybrid` runs on several MPI processes × OpenMP threads, with
+> results identical to the serial run for every combination tested. Next: Phase 4 (analytics validation).
 
 ---
 
@@ -90,39 +90,53 @@ Outputs (format details in [CLAUDE.md](CLAUDE.md) section 8):
 | `results/run/fan_chart.csv` | per month: P5, P25, median, P75, P95, mean |
 | `results/run/summary.json` | parameters, final-value stats, VaR, overflow counters, histogram checksum, timing |
 
-**Note on speed:** the VM runs math functions roughly 5–10× slower than the same CPU
-natively would (likely because VirtualBox runs on top of Windows Hyper-V). This changes
-absolute times, not correctness, and speedup ratios stay meaningful.
+**Note on speed:** this 30.9 s run was taken while the VM was running slowly. Later the same run took about 6.5 s (see the parallel section below). Speed changes the times, never the results.
 
-## Run with OpenMP threads
+## Run in parallel (MPI processes × OpenMP threads)
 
 ```bash
-./build/mc_hybrid --trials 1000000 --threads 4
+export HWLOC_COMPONENTS=-gl      # optional: hides a harmless hwloc message (see above)
+mpirun --bind-to none -np 2 ./build/mc_hybrid --trials 1000000 --threads 2
 ```
 
-Each thread simulates its own share of the 4096-trial chunks into a private
-histogram; the threads' histograms are added together at the end. Because every
-chunk has its own random seed, the result does not depend on the thread count:
-the `checksum` printed by both programs (a fingerprint of every histogram count)
-is identical for `mc_serial` and `mc_hybrid --threads 1/2/3/4`.
+- `-np P` starts P **processes**. The 4096-trial chunks are split into P contiguous
+  blocks (if they don't divide evenly, the first processes get one extra chunk).
+- `--threads T` starts T OpenMP **threads** inside each process. They share that
+  process's block, each filling a private histogram that is merged at the end.
+- `MPI_Reduce` then adds all processes' histograms and sums on process 0, which is
+  the only one that writes files.
+- `--bind-to none` stops Open MPI from pinning each process to one core, which would
+  squeeze all of its threads onto that core. If you ask for more processes than the
+  VM has cores, also add `--oversubscribe`.
 
-Real run on the development VM (1 000 000 trials, one run each, checksum
-`8d550353ce5046de` in every case):
+Because every chunk has its own random seed, the result does not depend on P or T.
+The `checksum` (a fingerprint of every histogram count) is identical for `mc_serial`
+and every `mpirun -np 1/2/3/4 ... --threads 1/2/4` combination (checked by `make test`).
 
-| Program | Threads | Wall time |
-|---|---|---|
-| `mc_serial` | 1 | 32.2 s |
-| `mc_hybrid` | 1 | 40.0 s |
-| `mc_hybrid` | 2 | 16.0 s |
-| `mc_hybrid` | 4 | 5.4 s |
-| `mc_hybrid` | 5 | 4.7 s |
+Real runs on the development VM, 1 000 000 trials × 120 months, one run each,
+checksum `8d550353ce5046de` every time:
 
-**Not yet a fair speedup measurement.** On this VM, single-threaded runs are
-unstable (the same 200 000-trial serial run took between 4.5 s and 9.1 s), while
-multi-threaded runs are steady (4 threads: 1.06–1.10 s). That is why the table
-seems to show more than 4× speedup with 4 threads, which isn't possible for real.
-Phase 6 deals with this (repeated runs, medians, host power settings) before
-reporting speedup numbers.
+| Processes × threads | Workers | Total | Compute | Reduce (MPI) | Speedup vs serial |
+|---|---|---|---|---|---|
+| `mc_serial` | 1 | 6.46 s | 6.46 s | — | 1.00 |
+| 1 × 1 | 1 | 6.26 s | 6.26 s | 0.000 s | 1.03 |
+| 2 × 1 | 2 | 3.50 s | 3.50 s | 0.003 s | 1.85 |
+| 2 × 2 | 4 | 2.45 s | 2.45 s | 0.002 s | 2.64 |
+| 1 × 4 | 4 | 2.43 s | 2.43 s | 0.000 s | 2.66 |
+| 4 × 1 | 4 | 2.49 s | 2.48 s | 0.004 s | 2.60 |
+| 5 × 1 | 5 | 2.06 s | 2.06 s | 0.006 s | 3.13 |
+
+What this shows: combining results is almost free (a few milliseconds to send
+about 2 MB of counts per process), so nearly all the time is simulation. Four
+workers give about 2.6× instead of 4×. The likely reason is that the host CPU has only 4
+physical cores shared with Windows, but this is a first look, not the benchmark.
+Phase 6 repeats every configuration 3 times and reports medians.
+
+**About the VM's speed:** during Phases 1–2 the same serial run took about 31 s and
+single-threaded times jumped around by up to 2×. When these numbers were taken it
+was steady at about 6.5 s. Host conditions (power mode, other Windows programs)
+clearly matter a lot, so benchmark runs must all be taken in one session under the
+same conditions.
 
 ## Build targets
 
@@ -130,7 +144,7 @@ reporting speedup numbers.
 |---|---|
 | `make` | Builds everything: `build/hello`, `build/mc_serial`, `build/mc_hybrid`, test binaries |
 | `make serial` | Serial baseline `build/mc_serial` |
-| `make hybrid` | Parallel engine `build/mc_hybrid` (OpenMP now, MPI in Phase 3) |
+| `make hybrid` | MPI + OpenMP engine `build/mc_hybrid` |
 | `make test` | Builds and runs all tests: C++ unit tests, end-to-end checks, serial == hybrid consistency |
 | `make bench` | Runs the scalability benchmark (Phase 6) |
 | `make clean` | Deletes `build/` |
@@ -155,7 +169,7 @@ See [CLAUDE.md](CLAUDE.md) for the full specification and design decisions.
 - [x] **Phase 0:** repository skeleton, toolchain check, MPI + OpenMP hello test
 - [x] **Phase 1:** serial Monte Carlo engine (O1)
 - [x] **Phase 2:** OpenMP threads (O2, part 1)
-- [ ] **Phase 3:** MPI processes (O2, part 2)
+- [x] **Phase 3:** MPI processes (O2, part 2)
 - [ ] **Phase 4:** analytics: percentiles, VaR, exact-mode validation (O3)
 - [ ] **Phase 5:** Matplotlib charts and Streamlit dashboard (O5)
 - [ ] **Phase 6:** benchmark and scalability report (O4)

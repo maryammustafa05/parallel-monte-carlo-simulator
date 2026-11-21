@@ -37,6 +37,13 @@ BinLayout make_bin_layout(const Config& cfg);
 // Number of chunks needed for cfg.trials trials: ceil(trials / CHUNK_SIZE).
 uint64_t num_chunks(uint64_t trials);
 
+// Contiguous block of chunks that worker `rank` of `workers` should run
+// (design decision D4). Each worker gets total/workers chunks, and the first
+// total%workers workers get one extra, so the split works for any numbers.
+// Sets first = index of its first chunk, count = how many (may be 0).
+void chunk_block(uint64_t total_chunks, int workers, int rank, uint64_t& first,
+                 uint64_t& count);
+
 // Histogram bin of value v in month t; counts out-of-range values in acc's overflow counters.
 int bin_index(const BinLayout& layout, int t, double v, Accumulator& acc);
 
