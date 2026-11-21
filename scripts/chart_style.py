@@ -62,6 +62,15 @@ def money(value: float, _pos: object = None) -> str:
         return f"{value / 1_000_000:.1f}M"
     if abs(value) >= 10_000:
         return f"{value / 1_000:.0f}K"
+    if 0 < abs(value) < 1:
+        return f"{value:.2g}"  # tiny values (near-total losses) would otherwise show as "0"
+    return f"{value:,.0f}"
+
+
+def amount(value: float) -> str:
+    """Exact-looking amount for labels: 8,245 or 17,983; tiny values as 0.033."""
+    if 0 < abs(value) < 1:
+        return f"{value:.2g}"
     return f"{value:,.0f}"
 
 

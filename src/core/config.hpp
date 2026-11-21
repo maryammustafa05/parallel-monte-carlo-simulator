@@ -18,11 +18,20 @@ struct Config {
     int threads = 1;                // OpenMP threads per process (hybrid only)
     int bins = 2048;                // histogram bins per month
     std::string out = "results/run";  // output directory
-    bool exact = false;             // also keep all final values (Phase 4)
+    bool exact = false;             // also keep all final values (validation)
 };
 
 // Largest --trials allowed with --exact (10 million doubles = 80 MB of memory).
 constexpr uint64_t MAX_EXACT_TRIALS = 10000000;
+
+// Input limits (see validate()). Far beyond realistic use, but they stop crashes:
+// histograms need months x bins x 8 bytes per thread, so huge values exhaust memory.
+constexpr double MAX_INITIAL = 1e12;
+constexpr double MAX_MU = 10.0;      // 1000 % per year
+constexpr double MAX_SIGMA = 10.0;   // 1000 % per year
+constexpr int MAX_MONTHS = 1200;     // 100 years
+constexpr int MAX_BINS = 65536;
+constexpr int MAX_THREADS = 256;
 
 // Outcome of parsing the command line.
 enum class ParseResult { Ok, Help, Error };

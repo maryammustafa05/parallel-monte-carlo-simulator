@@ -9,7 +9,8 @@ Accumulator::Accumulator(int months_, int bins_)
     : months(months_),
       bins(bins_),
       hist(static_cast<size_t>(months_) * static_cast<size_t>(bins_), 0),
-      month_sum(static_cast<size_t>(months_), 0.0) {}
+      month_sum(static_cast<size_t>(months_), 0.0),
+      month_zero(static_cast<size_t>(months_), 0) {}
 
 void Accumulator::add_final(double value, double initial) {
     // The first trial sets min/max; after that we compare.
@@ -35,6 +36,7 @@ void Accumulator::merge(const Accumulator& other) {
 
     for (size_t i = 0; i < hist.size(); ++i) hist[i] += other.hist[i];
     for (size_t i = 0; i < month_sum.size(); ++i) month_sum[i] += other.month_sum[i];
+    for (size_t i = 0; i < month_zero.size(); ++i) month_zero[i] += other.month_zero[i];
 
     if (trials == 0) {
         final_min = other.final_min;
@@ -67,6 +69,14 @@ uint64_t Accumulator::checksum() const {
     mix(loss_count);
     mix(overflow_low);
     mix(overflow_high);
+    // Zero counts are mixed in only where they are non-zero, so runs without any
+    // wiped-out trials keep exactly the same checksum as before this was added.
+    for (size_t i = 0; i < month_zero.size(); ++i) {
+        if (month_zero[i] != 0) {
+            mix(i);
+            mix(month_zero[i]);
+        }
+    }
     return hash;
 }
 

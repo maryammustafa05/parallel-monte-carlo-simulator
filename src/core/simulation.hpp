@@ -44,7 +44,9 @@ uint64_t num_chunks(uint64_t trials);
 void chunk_block(uint64_t total_chunks, int workers, int rank, uint64_t& first,
                  uint64_t& count);
 
-// Histogram bin of value v in month t; counts out-of-range values in acc's overflow counters.
+// Histogram bin of value v in month t; counts out-of-range values in acc's overflow
+// counters. Returns -1 for v <= 0 (a wiped-out trial), which is counted in
+// acc.month_zero instead of the histogram.
 int bin_index(const BinLayout& layout, int t, double v, Accumulator& acc);
 
 // Simulates every trial of chunk `chunk` and adds the results to acc.

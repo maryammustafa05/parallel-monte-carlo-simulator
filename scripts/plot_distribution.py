@@ -55,25 +55,57 @@ def make_distribution_chart(hist: pd.DataFrame, summary: dict,
     initial = params["initial"]
     confidence = risk["confidence"]
     tail_share = cs.percent(1 - confidence)        # e.g. "5 %" at 95 % confidence
-    # The VaR threshold is the (1 - confidence) quantile of the final value.
-    threshold = histogram_quantile(hist, 1 - confidence)
-
-    bins = coarsen(hist, MERGE_BINS)
-    total = bins["count"].sum()
-    # Bins are spaced in log space, so they have different widths. Dividing by the
-    # width gives a density, so wide bins don't look taller just for being wide.
-    density = bins["count"] / total / (bins["bin_upper"] - bins["bin_lower"]) * 1000
-    cumulative = bins["count"].cumsum() / total
-    first = int(np.argmax(bins["count"].to_numpy() > 0))
-    last = int(np.searchsorted(cumulative.to_numpy(), SHOW_UP_TO_QUANTILE))
-    bins, density = bins.iloc[first:last + 1], density.iloc[first:last + 1]
-
-    edges = np.append(bins["bin_lower"].to_numpy(), bins["bin_upper"].iloc[-1])
-    heights = np.append(density.to_numpy(), density.iloc[-1])
+    # The VaR threshold is the (1 - confidence) quantile of the final value. Newer
+    # runs store it exactly; for older summary.json files, read it from the histogram.
+    threshold = risk.get("threshold")
+    if threshold is None:
+        threshold = histogram_quantile(hist, 1 - confidence)
+    wiped_out = risk.get("prob_total_loss", 0.0)
 
     fig = Figure(figsize=cs.FIGSIZE, dpi=cs.DPI)
     ax = fig.add_subplot()
     cs.style_axes(ax, theme)
+
+    final = summary["final_value"]
+    if final["min"] == final["max"]:
+        # Every future ended at exactly the same value (volatility 0, or all wiped
+        # out): there is no spread to draw, so say it in words instead.
+        what = ("lost the entire investment" if final["max"] == 0
+                else f"end at exactly {final['max']:,.2f}")
+        ax.set_axis_off()
+        ax.text(0.5, 0.5, f"All {params['trials']:,} simulated futures {what}.\n"
+                f"Value at Risk ({cs.percent(confidence)}) = {risk['var']:,.0f}",
+                transform=ax.transAxes, ha="center", va="center", fontsize=13,
+                color=theme.text_primary)
+        cs.add_titles(ax, "Where the portfolio could end up", cs.describe_params(params), theme)
+        return fig
+
+    bins = coarsen(hist, MERGE_BINS)
+    # Shares are of ALL futures (wiped-out ones are not in the histogram, which only
+    # holds values > 0). Bins are spaced in log space, so they have different widths;
+    # dividing by the width gives a density, so wide bins don't look taller just for
+    # being wide.
+    total = params["trials"]
+    cumulative = bins["count"].cumsum() / bins["count"].sum()
+    first = int(np.argmax(bins["count"].to_numpy() > 0))
+    last = int(np.searchsorted(cumulative.to_numpy(), SHOW_UP_TO_QUANTILE))
+    bins = bins.iloc[first:last + 1]
+
+    # Very wide outcomes (e.g. 100 % volatility: some futures end near 0, others in the
+    # millions) can't be read on a normal axis. Past a 100x range, use a log axis.
+    # Bins are evenly spaced in log space, so on a log axis the honest height is
+    # simply the share of futures in each bin.
+    log_axis = bins["bin_upper"].iloc[-1] / bins["bin_lower"].iloc[0] > 100
+    if log_axis:
+        density = bins["count"] / total
+        y_label = "Share of futures in each value range"
+    else:
+        density = bins["count"] / total / (bins["bin_upper"] - bins["bin_lower"]) * 1000
+        y_label = "Share of futures per 1,000 of value"
+
+    edges = np.append(bins["bin_lower"].to_numpy(), bins["bin_upper"].iloc[-1])
+    heights = np.append(density.to_numpy(), density.iloc[-1])
+
     ax.yaxis.set_major_formatter(lambda v, _pos: f"{v:g} %")
 
     # Whole distribution as a soft area with a 2px outline.
@@ -92,23 +124,29 @@ def make_distribution_chart(hist: pd.DataFrame, summary: dict,
     # The threshold line is named in the legend (not next to the line), so its label
     # can never collide with the axis, whatever the confidence level.
     ax.axvline(threshold, color=theme.orange, linewidth=2,
-               label=f"Worst-{tail_share} threshold: {threshold:,.0f}")
+               label=f"Worst-{tail_share} threshold: {cs.amount(threshold)}")
 
-    ax.text(0.99, 0.74,
-            f"Value at Risk ({cs.percent(confidence)}): {risk['var']:,.0f}\n"
-            f"Chance of ending below the start: {risk['prob_loss']:.1%}\n"
-            f"Median final value: {summary['final_value']['median']:,.0f}",
-            transform=ax.transAxes, ha="right", va="top", fontsize=10, color=theme.text_primary)
+    info = [f"Value at Risk ({cs.percent(confidence)}): {risk['var']:,.0f}",
+            f"Chance of ending below the start: {risk['prob_loss']:.1%}"]
+    if wiped_out > 0:
+        info.append(f"Chance of losing everything: {wiped_out:.1%}")
+    info.append(f"Median final value: {cs.amount(summary['final_value']['median'])}")
+    # On a log axis the starting amount sits far right, so legend and notes go left.
+    side_x, side_ha = (0.01, "left") if log_axis else (0.99, "right")
+    ax.text(side_x, 0.74, "\n".join(info), transform=ax.transAxes, ha=side_ha, va="top",
+            fontsize=10, color=theme.text_primary)
 
+    if log_axis:
+        ax.set_xscale("log")
     ax.set_xlim(edges[0], edges[-1])
     ax.set_ylim(0, top * 1.15)
     ax.xaxis.set_major_formatter(cs.money)
     ax.set_xlabel(f"Portfolio value after {params['months'] // 12} years"
                   if params["months"] % 12 == 0 else
                   f"Portfolio value after {params['months']} months")
-    ax.set_ylabel("Share of futures per 1,000 of value")
+    ax.set_ylabel(y_label + (" (log value axis)" if log_axis else ""))
     cs.add_titles(ax, "Where the portfolio could end up", cs.describe_params(params), theme)
-    cs.add_legend(ax, "upper right", theme)
+    cs.add_legend(ax, "upper left" if log_axis else "upper right", theme)
     fig.tight_layout()
     return fig
 

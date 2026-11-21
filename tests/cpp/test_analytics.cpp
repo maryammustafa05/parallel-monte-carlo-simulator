@@ -96,11 +96,43 @@ static void test_exact_percentiles() {
     CHECK_NEAR(e.var, 25.0 - 2.0, 1e-12);  // VaR = V0 - P5
 }
 
+static void test_zeros_in_percentiles() {
+    // 10 bins of 10 counts (100 values > 0) plus 100 wiped-out values (exactly 0).
+    std::vector<uint64_t> counts(10, 10);
+    const double lo = 0.0, w = 0.1;
+    // 200 values in total; the lowest half are zeros.
+    CHECK(mc::histogram_percentile(counts.data(), 10, lo, w, 0.05, 100) == 0.0);
+    CHECK(mc::histogram_percentile(counts.data(), 10, lo, w, 0.50, 100) == 0.0);
+    // P75 = 150th value = 50th of the non-zero ones = end of bin 4 -> exp(0.5).
+    CHECK_NEAR(mc::histogram_percentile(counts.data(), 10, lo, w, 0.75, 100), std::exp(0.5),
+               1e-12);
+    // Only zeros: every percentile is 0.
+    std::vector<uint64_t> empty(10, 0);
+    CHECK(mc::histogram_percentile(empty.data(), 10, lo, w, 0.95, 7) == 0.0);
+}
+
+static void test_identical_values_have_zero_std() {
+    // 1000 trials all ending at exactly the same awkward value: the formula
+    // E[V^2] - E[V]^2 would give rounding noise, but the spread is exactly 0.
+    mc::Accumulator acc(1, 4);
+    for (int i = 0; i < 1000; ++i) acc.add_final(20096.61376695633, 10000.0);
+    mc::BinLayout layout;
+    layout.months = 1;
+    layout.bins = 4;
+    layout.log_lo = {9.0};
+    layout.log_width = {0.2};
+    layout.inv_width = {5.0};
+    acc.month_hist(1)[3] = 1000;
+    CHECK(mc::compute_final_stats(acc, layout).std == 0.0);
+}
+
 int main() {
     test_uniform_histogram();
     test_single_bin_and_edges();
     test_var();
     test_stats_from_accumulator();
     test_exact_percentiles();
+    test_zeros_in_percentiles();
+    test_identical_values_have_zero_std();
     return test::summary("test_analytics");
 }

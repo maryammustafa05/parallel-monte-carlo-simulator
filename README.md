@@ -9,11 +9,11 @@ Course project for Parallel & Distributed Computing (PDC), BS Software Engineeri
 FAST NUCES Karachi, Fall 2026.
 Team: Maryam Mustafa (23k-2046), Umaima Fatima (23k-3043).
 
-> **Status:** Phase 6 done: the engine runs on MPI processes × OpenMP threads with results
+> **Status:** Phase 7 done: the engine runs on MPI processes × OpenMP threads with results
 > identical to the serial run, is validated against exact values and an independent NumPy
-> implementation, has charts plus a Streamlit dashboard, and has been benchmarked
-> (best: **2.56× on 5 cores**, see [benchmark report](docs/benchmark-report.md)).
-> Next: Phase 7 (edge-case tests and hardening).
+> implementation, has charts plus a Streamlit dashboard, has been benchmarked
+> (best: **2.56× on 5 cores**, see [benchmark report](docs/benchmark-report.md)), and is
+> hardened against extreme inputs. Next: Phase 8 (final documentation and demo).
 
 ![Fan chart of 1,000,000 simulated futures](docs/images/fan_chart.png)
 
@@ -261,6 +261,32 @@ histograms, weak-scaling efficiency rises from 74 % to 92 %). The rest comes fro
 CPU with only 4 physical cores slowing its clock under full load. Charts: [time](docs/images/benchmark_time.png),
 [efficiency heat-map](docs/images/benchmark_efficiency.png), [weak scaling](docs/images/benchmark_weak.png).
 
+## Testing
+
+```bash
+make test         # everything below; about 1 minute
+```
+
+| Level | What is checked | Where |
+|---|---|---|
+| Unit | RNG determinism and normal distribution; accumulator merge; work split; percentiles, VaR, zeros; input parsing and every limit | [tests/cpp/](tests/cpp/) |
+| Analytic | Simulated mean and mean of squares equal the exact formulas within 4 standard errors | [test_analytic_moments.cpp](tests/cpp/test_analytic_moments.cpp) |
+| Consistency | `mc_serial` == `mc_hybrid` for 16 processes × threads layouts, incl. uneven splits, empty processes, `--exact` | [tests/consistency_test.sh](tests/consistency_test.sh) |
+| Edge cases | 1 trial, fewer trials than workers, zero volatility (exact answer known), 1 month, portfolios wiped out, bad input under `mpirun` | [tests/edge_cases.sh](tests/edge_cases.sh) |
+| Independent reference | C++ vs a separate NumPy implementation, 19 statistics within 4 SE | [tests/python/test_reference.py](tests/python/test_reference.py) |
+| Charts and dashboard | Every chart draws for normal and extreme runs in both themes; benchmark maths; a dashboard run completes | [tests/python/](tests/python/) |
+
+`make test` passes from a fresh copy of the repository after `bash scripts/setup_env.sh`
+(checked in Phase 7). [GitHub Actions](.github/workflows/ci.yml) runs the same steps on
+every push. To use a different Python: `PYTHON=/path/to/python make test`.
+
+**Input limits.** The programs reject inputs that used to crash or produce broken output:
+`--mu` must be in (−1, 10], `--sigma` in [0, 10], `--initial` in (0, 10¹²], `--months`
+in [1, 1200], `--bins` in [2, 65536], `--threads` in [1, 256], and combinations that could
+exceed the range of a double (for example `--sigma 10 --months 1200`). A portfolio that loses
+100 % in a month stays at 0. Such futures are counted separately, so percentiles, VaR and the
+new `prob_total_loss` stay correct even when many portfolios are wiped out.
+
 ## Build targets
 
 | Command | What it does |
@@ -268,7 +294,7 @@ CPU with only 4 physical cores slowing its clock under full load. Charts: [time]
 | `make` | Builds everything: `build/hello`, `build/mc_serial`, `build/mc_hybrid`, test binaries |
 | `make serial` | Serial baseline `build/mc_serial` |
 | `make hybrid` | MPI + OpenMP engine `build/mc_hybrid` |
-| `make test` | Builds and runs all tests: C++ unit tests, end-to-end checks, serial == hybrid consistency, C++ vs NumPy, dashboard (needs `.venv`) |
+| `make test` | Builds and runs all tests (see *Testing* above; needs `.venv`) |
 | `make bench` | Full scalability benchmark + charts (~10–20 min); data in `results/benchmark*.csv` |
 | `make clean` | Deletes `build/` |
 
@@ -296,7 +322,7 @@ See [CLAUDE.md](CLAUDE.md) for the full specification and design decisions.
 - [x] **Phase 4:** analytics: percentiles, VaR, exact-mode validation (O3)
 - [x] **Phase 5:** Matplotlib charts and Streamlit dashboard (O5)
 - [x] **Phase 6:** benchmark and scalability report (O4)
-- [ ] **Phase 7:** edge-case tests and hardening
+- [x] **Phase 7:** edge-case tests and hardening
 - [ ] **Phase 8:** final documentation and demo
 
 ## License

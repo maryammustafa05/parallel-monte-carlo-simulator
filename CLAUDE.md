@@ -222,12 +222,15 @@ parallel-monte-carlo-simulator/
 │   │   ├── test_rng.cpp              # determinism, mean≈0, std≈1
 │   │   ├── test_accumulator.cpp      # merge correctness
 │   │   ├── test_analytics.cpp        # percentiles/VaR on known histograms
+│   │   ├── test_config.cpp           # CLI parsing and input limits
 │   │   └── test_analytic_moments.cpp # E[V_T], E[V_T^2] vs formulas
 │   ├── python/
 │   │   ├── reference_numpy.py        # independent NumPy implementation
 │   │   ├── test_reference.py         # C++ vs NumPy statistical agreement
-│   │   └── test_dashboard.py         # Streamlit AppTest: a run completes in the UI
+│   │   ├── test_dashboard.py         # Streamlit AppTest: a run completes in the UI
+│   │   └── test_plots.py             # charts for extreme runs, benchmark maths
 │   ├── consistency_test.sh           # serial == hybrid(P,T) for several (P,T)
+│   ├── edge_cases.sh                 # trials=1, sigma=0, months=1, wipe-outs, bad input
 │   └── run_tests.sh
 ├── scripts/
 │   ├── setup_env.sh                  # checks/installs toolchain on Ubuntu/WSL2
@@ -266,11 +269,13 @@ month,p05,p25,median,p75,p95,mean
   "params": {"initial":10000,"mu":0.07,"sigma":0.15,"months":120,"trials":1000000,"confidence":0.95,"seed":42},
   "parallel": {"mpi_processes":4,"omp_threads":2},
   "final_value": {"mean":0,"std":0,"min":0,"max":0,"median":0,"p05":0,"p95":0},
-  "risk": {"var":0,"prob_loss":0,"confidence":0.95},
+  "risk": {"var":0,"threshold":0,"prob_loss":0,"prob_total_loss":0,"confidence":0.95},
   "histogram": {"bins":2048,"overflow_low":0,"overflow_high":0,"checksum":"0123456789abcdef"},
   "timing": {"total_s":0,"compute_s":0,"reduce_s":0}
 }
 ```
+
+`risk.threshold` is the (1−confidence) quantile of V_T (VaR = max(0, V0 − threshold)); `risk.prob_total_loss` is the share of trials wiped out (V_T = 0); both added in Phase 7. Wiped-out values (exactly 0) are counted per month outside the histogram, not in `overflow_low`, which counts only values > 0 below a month's range. Non-finite numbers are written as `null` (input validation prevents them).
 
 `checksum` (added in Phase 2) is a 16-hex-digit FNV-1a hash of all integer histogram counts; equal checksums prove serial == parallel.
 

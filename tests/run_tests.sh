@@ -52,10 +52,19 @@ if ! bash tests/consistency_test.sh; then
 fi
 
 echo
-echo "== Python: C++ vs independent NumPy reference + dashboard =="
-# Prefer the project's virtual environment; fall back to the system python3.
-PYTHON=.venv/bin/python
-[ -x "$PYTHON" ] || PYTHON=python3
+echo "== Edge cases: unusual inputs, serial and MPI =="
+if ! bash tests/edge_cases.sh; then
+    failed=1
+fi
+
+echo
+echo "== Python: C++ vs independent NumPy reference, charts, dashboard =="
+# Use $PYTHON if set (e.g. PYTHON=/path/to/python make test), else the project's
+# virtual environment, else the system python3.
+if [ -z "${PYTHON:-}" ]; then
+    PYTHON=.venv/bin/python
+    [ -x "$PYTHON" ] || PYTHON=python3
+fi
 if "$PYTHON" -c "import numpy, pytest" 2> /dev/null; then
     if ! "$PYTHON" -m pytest -q -s -p no:cacheprovider tests/python; then
         failed=1

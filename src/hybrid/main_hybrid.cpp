@@ -70,6 +70,9 @@ void reduce_to_root(mc::Accumulator& acc, int rank) {
                static_cast<int>(acc.hist.size()), MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(root ? MPI_IN_PLACE : acc.month_sum.data(), acc.month_sum.data(),
                static_cast<int>(acc.month_sum.size()), MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(root ? MPI_IN_PLACE : acc.month_zero.data(), acc.month_zero.data(),
+               static_cast<int>(acc.month_zero.size()), MPI_UINT64_T, MPI_SUM, 0,
+               MPI_COMM_WORLD);
 
     // Small scalars, packed into arrays so we need only a few messages.
     uint64_t counts[4] = {acc.trials, acc.loss_count, acc.overflow_low, acc.overflow_high};

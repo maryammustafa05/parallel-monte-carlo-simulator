@@ -22,13 +22,18 @@ struct Accumulator {
     // Sum of V_t over all trials, for each month t = 1..T (index t-1). Used for the mean.
     std::vector<double> month_sum;
 
+    // Trials whose value is exactly 0 in month t (index t-1): wiped out by a -100 %
+    // month. 0 has no logarithm, so these can't go in the log-spaced histogram;
+    // they are counted here instead. Once wiped out, a trial stays at 0.
+    std::vector<uint64_t> month_zero;
+
     uint64_t trials = 0;          // number of trials added
     double final_sum = 0.0;       // sum of V_T
     double final_sum_sq = 0.0;    // sum of V_T^2 (for the standard deviation)
     double final_min = 0.0;       // smallest V_T seen (valid only if trials > 0)
     double final_max = 0.0;       // largest V_T seen (valid only if trials > 0)
     uint64_t loss_count = 0;      // trials with V_T < V0 (for prob_loss)
-    uint64_t overflow_low = 0;    // values below a month's histogram range (all months)
+    uint64_t overflow_low = 0;    // values > 0 but below a month's histogram range (all months)
     uint64_t overflow_high = 0;   // values above a month's histogram range (all months)
 
     // --exact mode only (validation, small N): also keep every final value V_T,

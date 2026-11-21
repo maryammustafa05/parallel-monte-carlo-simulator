@@ -30,12 +30,16 @@ bool parse_int(const std::string& text, long long& value) {
     return true;
 }
 
-// Parses a non-negative count. Accepts plain integers ("1000000") and, for
-// convenience, whole numbers in scientific notation ("1e6").
+// Parses a non-negative count. Accepts plain integers up to the full 64-bit range
+// ("1000000", "18446744073709551615") and, for convenience, whole numbers in
+// scientific notation ("1e6").
 bool parse_count(const std::string& text, uint64_t& value) {
-    if (text.empty() || text[0] == '-') return false;
-    long long as_int = 0;
-    if (parse_int(text, as_int)) {
+    if (text.empty() || text[0] == '-' || text[0] == '+') return false;
+    errno = 0;
+    char* end = nullptr;
+    const unsigned long long as_int = std::strtoull(text.c_str(), &end, 10);
+    if (*end == '\0') {
+        if (errno != 0) return false;  // larger than 2^64 - 1
         value = static_cast<uint64_t>(as_int);
         return true;
     }
@@ -113,21 +117,37 @@ ParseResult parse_args(int argc, char** argv, Config& cfg, std::string& error) {
     return validate(cfg, error) ? ParseResult::Ok : ParseResult::Error;
 }
 
+// ln of the largest value one trial could plausibly reach: every month a
+// 6-standard-deviation good month. Used to refuse inputs that would overflow
+// double precision (about 1.8e308, ln = 709) and write "inf" into the results.
+static double worst_case_log_value(const Config& cfg) {
+    const double best_month = 1.0 + cfg.mu / 12.0 + 6.0 * cfg.sigma / std::sqrt(12.0);
+    return std::log(cfg.initial) + cfg.months * std::log(best_month);
+}
+
 bool validate(const Config& cfg, std::string& error) {
-    if (!(cfg.initial > 0.0)) {
-        error = "--initial must be > 0";
-    } else if (cfg.months < 1) {
-        error = "--months must be >= 1";
+    // Upper limits keep the program away from crashes (memory) and from numbers
+    // too large for a double; they are far beyond any realistic investment.
+    if (!(cfg.initial > 0.0 && cfg.initial <= MAX_INITIAL)) {
+        error = "--initial must be > 0 and <= 1e12";
+    } else if (!(cfg.mu > -1.0 && cfg.mu <= MAX_MU)) {
+        // mu = -1 means losing 100 % per year on average; below that the model breaks.
+        error = "--mu must be > -1 (-100 % per year) and <= 10 (1000 % per year)";
+    } else if (!(cfg.sigma >= 0.0 && cfg.sigma <= MAX_SIGMA)) {
+        error = "--sigma must be >= 0 and <= 10 (1000 % per year)";
+    } else if (cfg.months < 1 || cfg.months > MAX_MONTHS) {
+        error = "--months must be between 1 and 1200 (100 years)";
     } else if (cfg.trials < 1) {
         error = "--trials must be >= 1";
-    } else if (!(cfg.sigma >= 0.0)) {
-        error = "--sigma must be >= 0";
     } else if (!(cfg.confidence > 0.0 && cfg.confidence < 1.0)) {
         error = "--confidence must be strictly between 0 and 1";
-    } else if (cfg.threads < 1) {
-        error = "--threads must be >= 1";
-    } else if (cfg.bins < 2) {
-        error = "--bins must be >= 2";
+    } else if (cfg.threads < 1 || cfg.threads > MAX_THREADS) {
+        error = "--threads must be between 1 and 256";
+    } else if (cfg.bins < 2 || cfg.bins > MAX_BINS) {
+        error = "--bins must be between 2 and 65536";
+    } else if (worst_case_log_value(cfg) > 700.0) {
+        error = "--initial, --mu, --sigma and --months together could produce values too "
+                "large for a double (> 1e304); use a smaller horizon or volatility";
     } else if (cfg.exact && cfg.trials > MAX_EXACT_TRIALS) {
         error = "--exact keeps every final value in memory; use --trials <= " +
                 std::to_string(MAX_EXACT_TRIALS);

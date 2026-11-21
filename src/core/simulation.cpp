@@ -60,11 +60,13 @@ void chunk_block(uint64_t total_chunks, int workers, int rank, uint64_t& first,
 int bin_index(const BinLayout& layout, int t, double v, Accumulator& acc) {
     // A value of 0 (a total loss after a -100 % month) has no logarithm.
     if (v <= 0.0) {
-        ++acc.overflow_low;
-        return 0;
+        ++acc.month_zero[t - 1];
+        return -1;
     }
     const double x = (std::log(v) - layout.log_lo[t - 1]) * layout.inv_width[t - 1];
-    if (x < 0.0) {
+    // Written as !(x >= 0) rather than x < 0 so that a NaN also lands here
+    // instead of becoming an out-of-range array index.
+    if (!(x >= 0.0)) {
         ++acc.overflow_low;
         return 0;
     }
@@ -93,7 +95,8 @@ void simulate_chunk(const Config& cfg, const BinLayout& layout, uint64_t chunk,
             value *= 1.0 + r;
 
             acc.month_sum[t - 1] += value;
-            acc.month_hist(t)[bin_index(layout, t, value, acc)] += 1;
+            const int bin = bin_index(layout, t, value, acc);
+            if (bin >= 0) acc.month_hist(t)[bin] += 1;
         }
         acc.add_final(value, cfg.initial);
     }

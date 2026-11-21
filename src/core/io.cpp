@@ -11,7 +11,10 @@ namespace mc {
 namespace {
 
 // Formats a number with up to 10 significant digits ("10000", "0.07", "12345.6789").
+// JSON has no NaN or infinity, so those become null. Input validation should make
+// that impossible, but a broken file would break every Python script.
 std::string num(double x) {
+    if (!std::isfinite(x)) return "null";
     char buffer[64];
     std::snprintf(buffer, sizeof(buffer), "%.10g", x);
     return buffer;
@@ -96,7 +99,9 @@ bool write_summary_json(const std::string& path, const Config& cfg,
          << ", \"p05\": " << num(f.p05)
          << ", \"p95\": " << num(f.p95) << "},\n"
          << "  \"risk\": {\"var\": " << num(risk.var)
+         << ", \"threshold\": " << num(risk.threshold)
          << ", \"prob_loss\": " << num(risk.prob_loss)
+         << ", \"prob_total_loss\": " << num(risk.prob_total_loss)
          << ", \"confidence\": " << num(risk.confidence) << "},\n"
          << "  \"histogram\": {\"bins\": " << cfg.bins
          << ", \"overflow_low\": " << num(acc.overflow_low)

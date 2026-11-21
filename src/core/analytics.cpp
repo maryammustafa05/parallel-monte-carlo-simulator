@@ -7,15 +7,18 @@
 namespace mc {
 
 double histogram_percentile(const uint64_t* counts, int bins, double log_lo,
-                            double log_width, double q) {
-    uint64_t total = 0;
+                            double log_width, double q, uint64_t zeros) {
+    uint64_t total = zeros;
     for (int b = 0; b < bins; ++b) total += counts[b];
     if (total == 0) return std::numeric_limits<double>::quiet_NaN();
 
-    // Walk the bins until the running count reaches q * total, then place the
-    // answer proportionally inside that bin.
+    // The zeros are the smallest values. If the quantile falls among them, it is 0.
     const double target = q * static_cast<double>(total);
-    double cumulative = 0.0;
+    if (zeros > 0 && target <= static_cast<double>(zeros)) return 0.0;
+
+    // Otherwise walk the bins until the running count reaches the target, then
+    // place the answer proportionally inside that bin.
+    double cumulative = static_cast<double>(zeros);
     for (int b = 0; b < bins; ++b) {
         if (counts[b] == 0) continue;
         const double count = static_cast<double>(counts[b]);
@@ -36,7 +39,7 @@ double value_at_risk(double initial, double quantile_value) {
 static double month_percentile(const Accumulator& acc, const BinLayout& layout, int t,
                                double q) {
     return histogram_percentile(acc.month_hist(t), layout.bins, layout.log_lo[t - 1],
-                                layout.log_width[t - 1], q);
+                                layout.log_width[t - 1], q, acc.month_zero[t - 1]);
 }
 
 std::vector<FanRow> compute_fan_chart(const Accumulator& acc, const BinLayout& layout,
@@ -68,9 +71,16 @@ FinalStats compute_final_stats(const Accumulator& acc, const BinLayout& layout) 
     FinalStats s;
     const double n = static_cast<double>(acc.trials);
     s.mean = acc.final_sum / n;
-    // Var = E[V^2] - E[V]^2. Rounding can make it a hair below 0 when sigma = 0.
-    const double variance = acc.final_sum_sq / n - s.mean * s.mean;
-    s.std = std::sqrt(std::max(0.0, variance));
+    // Var = E[V^2] - E[V]^2. If every trial ended at exactly the same value
+    // (e.g. sigma = 0), the spread is exactly 0. Computing it with the formula
+    // would instead give rounding noise, because E[V^2] and E[V]^2 are two huge,
+    // almost equal numbers.
+    if (acc.final_min == acc.final_max) {
+        s.std = 0.0;
+    } else {
+        const double variance = acc.final_sum_sq / n - s.mean * s.mean;
+        s.std = std::sqrt(std::max(0.0, variance));
+    }
     s.min = acc.final_min;
     s.max = acc.final_max;
     const int T = acc.months;
@@ -85,9 +95,11 @@ RiskStats compute_risk(const Accumulator& acc, const BinLayout& layout, double i
     RiskStats r;
     r.confidence = confidence;
     // At 95 % confidence we look at the 5th percentile of the final value.
-    const double worst_case = month_percentile(acc, layout, acc.months, 1.0 - confidence);
-    r.var = value_at_risk(initial, worst_case);
-    r.prob_loss = static_cast<double>(acc.loss_count) / static_cast<double>(acc.trials);
+    r.threshold = month_percentile(acc, layout, acc.months, 1.0 - confidence);
+    r.var = value_at_risk(initial, r.threshold);
+    const double n = static_cast<double>(acc.trials);
+    r.prob_loss = static_cast<double>(acc.loss_count) / n;
+    r.prob_total_loss = static_cast<double>(acc.month_zero[acc.months - 1]) / n;
     return r;
 }
 
